@@ -1,1 +1,71 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>CodeScope</title><link rel="stylesheet" href="app.css"></head><body><main><header><h1>CodeScope</h1><p>Comprendre une solution .NET, localement.</p></header><section class="card"><form id="scan"><label>Dossier à analyser</label><div class="row"><input id="path" required placeholder="C:\code\MaSolution"><button>Analyser</button></div></form><p id="status"></p></section><section id="dashboard" class="grid"></section><section class="card"><h2>Projets</h2><div id="projects" class="empty">Lancez une analyse.</div></section><section class="card"><h2>Recherche</h2><div class="row"><input id="query" placeholder="Classe ou méthode"><button id="search">Rechercher</button></div><div id="results"></div></section></main><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodeScope</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>CodeScope</h1>
+        <p>Comprendre une solution .NET, localement.</p>
+      </div>
+      <span class="privacy">Analyse locale · lecture seule</span>
+    </header>
+
+    <section class="card">
+      <form id="scan">
+        <label for="path">Dossier à analyser</label>
+        <div class="row">
+          <input id="path" required autocomplete="off" placeholder="C:\code\MaSolution">
+          <button id="scanButton" type="submit">Lancer l'analyse</button>
+        </div>
+      </form>
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="progressCard" class="card" hidden>
+      <div class="section-heading">
+        <div>
+          <span id="progressStage" class="eyebrow">En attente</span>
+          <h2 id="progressMessage">Préparation de l'analyse</h2>
+        </div>
+        <button id="cancel" type="button" class="secondary">Annuler</button>
+      </div>
+      <div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div>
+      <div id="progressMetrics" class="progress-metrics"></div>
+      <p id="progressError" class="error"></p>
+    </section>
+
+    <section id="dashboard" class="grid" aria-label="Tableau de bord"></section>
+
+    <div class="columns">
+      <section class="card">
+        <div class="section-heading">
+          <h2>Analyses récentes</h2>
+          <button id="refreshHistory" type="button" class="link-button">Actualiser</button>
+        </div>
+        <div id="history" class="empty">Aucune analyse enregistrée.</div>
+      </section>
+
+      <section class="card">
+        <h2>Projets</h2>
+        <div id="projects" class="empty">Sélectionnez une analyse terminée.</div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Recherche</h2>
+      <div class="row">
+        <input id="query" autocomplete="off" placeholder="Classe ou méthode" disabled>
+        <button id="search" type="button" disabled>Rechercher</button>
+      </div>
+      <div id="results"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

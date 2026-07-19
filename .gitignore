@@ -2,5 +2,7 @@ bin/
 obj/
 node_modules/
 *.db
+*.db-shm
+*.db-wal
 work/
 .vs/

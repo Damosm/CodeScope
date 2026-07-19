@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using System.Xml;
 using CodeScope.Application;
 using CodeScope.Domain;
 using Microsoft.CodeAnalysis.CSharp;
@@ -11,30 +12,185 @@ public sealed class ProjectScanner : IProjectScanner
 {
     private static readonly HashSet<string> Excluded = new(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", "bin", "obj", "node_modules", "packages" };
 
-    public async Task<Analysis> ScanAsync(string rootPath, CancellationToken ct)
+    public async Task<Analysis> ScanAsync(
+        Guid analysisId,
+        string rootPath,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken ct)
     {
         var fullRoot = Path.GetFullPath(rootPath);
         if (!Directory.Exists(fullRoot)) throw new DirectoryNotFoundException("Le dossier indiqué n'existe pas.");
-        var analysis = new Analysis { RootPath = fullRoot, Status = AnalysisStatus.Running };
-        foreach (var projectPath in Enumerate(fullRoot, "*.csproj"))
+        var analysis = new Analysis { Id = analysisId, RootPath = fullRoot, Status = AnalysisStatus.Running };
+        var filesProcessed = 0;
+        var symbolsFound = 0;
+        var warnings = 0;
+
+        progress?.Report(new AnalysisProgress("discovering", "Recherche des projets .NET.", 0, 0, 0, 0, 0));
+        var projectPaths = EnumerateSafely(fullRoot, "*.csproj", () => warnings++).ToList();
+
+        for (var projectIndex = 0; projectIndex < projectPaths.Count; projectIndex++)
         {
             ct.ThrowIfCancellationRequested();
-            var doc = XDocument.Load(projectPath, LoadOptions.None);
-            var project = new ProjectInfo { AnalysisId = analysis.Id, Name = Path.GetFileNameWithoutExtension(projectPath), Path = projectPath, TargetFramework = doc.Descendants().FirstOrDefault(x => x.Name.LocalName is "TargetFramework" or "TargetFrameworks")?.Value };
-            foreach (var reference in doc.Descendants().Where(x => x.Name.LocalName == "ProjectReference"))
-                project.References.Add(new ProjectReferenceInfo { ReferencedPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(projectPath)!, reference.Attribute("Include")?.Value ?? "")) });
-            foreach (var file in Enumerate(Path.GetDirectoryName(projectPath)!, "*.cs"))
+            var projectPath = projectPaths[projectIndex];
+            progress?.Report(new AnalysisProgress(
+                "projects",
+                $"Analyse de {Path.GetFileName(projectPath)}.",
+                projectIndex,
+                projectPaths.Count,
+                filesProcessed,
+                symbolsFound,
+                warnings));
+
+            XDocument document;
+            try
+            {
+                document = XDocument.Load(projectPath, LoadOptions.None);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or XmlException)
+            {
+                warnings++;
+                continue;
+            }
+
+            var project = CreateProject(analysis.Id, projectPath, document, ref warnings);
+            foreach (var file in EnumerateSafely(Path.GetDirectoryName(projectPath)!, "*.cs", () => warnings++))
             {
                 ct.ThrowIfCancellationRequested();
-                try { project.Symbols.AddRange(await ParseAsync(file, project.Id, ct)); } catch (IOException) { }
+                try
+                {
+                    var symbols = (await ParseAsync(file, project.Id, ct)).ToList();
+                    project.Symbols.AddRange(symbols);
+                    symbolsFound += symbols.Count;
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    warnings++;
+                }
+
+                filesProcessed++;
+                progress?.Report(new AnalysisProgress(
+                    "files",
+                    $"{project.Name} : {filesProcessed} fichier(s) traité(s).",
+                    projectIndex,
+                    projectPaths.Count,
+                    filesProcessed,
+                    symbolsFound,
+                    warnings));
             }
+
             analysis.Projects.Add(project);
+            progress?.Report(new AnalysisProgress(
+                "projects",
+                $"Projet {project.Name} terminé.",
+                projectIndex + 1,
+                projectPaths.Count,
+                filesProcessed,
+                symbolsFound,
+                warnings));
         }
-        analysis.Status = AnalysisStatus.Completed; analysis.CompletedAt = DateTimeOffset.UtcNow;
+
+        analysis.Status = AnalysisStatus.Completed;
+        analysis.CompletedAt = DateTimeOffset.UtcNow;
+        progress?.Report(new AnalysisProgress(
+            "completed",
+            "Analyse terminée.",
+            projectPaths.Count,
+            projectPaths.Count,
+            filesProcessed,
+            symbolsFound,
+            warnings));
         return analysis;
     }
 
-    private static IEnumerable<string> Enumerate(string root, string pattern) => Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories).Where(p => !p.Split(Path.DirectorySeparatorChar).Any(Excluded.Contains));
+    private static ProjectInfo CreateProject(Guid analysisId, string path, XDocument document, ref int warnings)
+    {
+        var project = new ProjectInfo
+        {
+            AnalysisId = analysisId,
+            Name = Path.GetFileNameWithoutExtension(path),
+            Path = path,
+            TargetFramework = document.Descendants()
+                .FirstOrDefault(x => x.Name.LocalName is "TargetFramework" or "TargetFrameworks")?.Value
+        };
+
+        foreach (var reference in document.Descendants().Where(x => x.Name.LocalName == "ProjectReference"))
+        {
+            try
+            {
+                var relativePath = reference.Attribute("Include")?.Value;
+                if (string.IsNullOrWhiteSpace(relativePath)) continue;
+                project.References.Add(new ProjectReferenceInfo
+                {
+                    ReferencedPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, relativePath))
+                });
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                warnings++;
+            }
+        }
+
+        return project;
+    }
+
+    private static IEnumerable<string> EnumerateSafely(string root, string pattern, Action onWarning)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(directory, pattern); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                onWarning();
+                continue;
+            }
+
+            using (var enumerator = files.GetEnumerator())
+            {
+                while (true)
+                {
+                    string file;
+                    try
+                    {
+                        if (!enumerator.MoveNext()) break;
+                        file = enumerator.Current;
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        onWarning();
+                        break;
+                    }
+                    yield return file;
+                }
+            }
+
+            IEnumerable<string> directories;
+            try { directories = Directory.EnumerateDirectories(directory); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                onWarning();
+                continue;
+            }
+
+            foreach (var child in directories)
+            {
+                if (Excluded.Contains(Path.GetFileName(child))) continue;
+                try
+                {
+                    if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0) continue;
+                    pending.Push(child);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    onWarning();
+                }
+            }
+        }
+    }
 
     private static async Task<IEnumerable<CodeSymbol>> ParseAsync(string path, Guid projectId, CancellationToken ct)
     {
