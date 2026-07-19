@@ -17,3 +17,4 @@ public sealed class AnalysisRepository : IAnalysisRepository
     }
     public async Task<IReadOnlyList<CodeSymbol>> SearchAsync(Guid id, string query, CancellationToken ct) => await _db.Symbols.AsNoTracking().Where(x => x.Name.Contains(query) && _db.Projects.Any(p => p.Id == x.ProjectInfoId && p.AnalysisId == id)).OrderBy(x => x.Name).Take(100).ToListAsync(ct);
 }
+   
