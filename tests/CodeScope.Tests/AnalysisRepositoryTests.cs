@@ -16,6 +16,12 @@ public sealed class AnalysisRepositoryTests
         var repository = new AnalysisRepository(db);
         var pending = new Analysis { RootPath = "C:\\source", Status = AnalysisStatus.Pending };
         await repository.AddAsync(pending, default);
+        var serviceSymbol = new CodeSymbol
+        {
+            Name = "Service",
+            Kind = SymbolKind.Class,
+            FilePath = "Service.cs"
+        };
 
         var completed = new Analysis
         {
@@ -30,7 +36,20 @@ public sealed class AnalysisRepositoryTests
                     AnalysisId = pending.Id,
                     Name = "Sample",
                     Path = "C:\\source\\Sample.csproj",
-                    Symbols = { new CodeSymbol { Name = "Service", Kind = SymbolKind.Class, FilePath = "Service.cs" } }
+                    Symbols = { serviceSymbol }
+                }
+            },
+            Relations =
+            {
+                new CodeRelation
+                {
+                    AnalysisId = pending.Id,
+                    SourceSymbolId = serviceSymbol.Id,
+                    SourceDisplay = "Demo.Service",
+                    TargetDisplay = "Demo.IService",
+                    Kind = RelationKind.Implements,
+                    FilePath = "Service.cs",
+                    Line = 3
                 }
             }
         };
@@ -41,6 +60,8 @@ public sealed class AnalysisRepositoryTests
         Assert.Equal(AnalysisStatus.Completed, saved!.Status);
         Assert.Single(saved.Projects);
         Assert.Single(saved.Projects[0].Symbols);
+        Assert.Single(saved.Relations);
+        Assert.Single(await repository.GetRelationsAsync(pending.Id, serviceSymbol.Id, default));
 
         await repository.DeleteAsync(pending.Id, default);
         Assert.Null(await repository.GetAsync(pending.Id, default));

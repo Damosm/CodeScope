@@ -1,9 +1,9 @@
 # Feuille de route
 
 1. Inventaire persistant et export des avertissements détaillés.
-2. Analyse sémantique Roslyn, packages, endpoints et appels.
-3. Comparaison entre deux analyses et analyse incrémentale Git.
-4. Recherche SQLite FTS5.
-5. Analyseur SQL tolérant.
-6. Analyse d'impact avec niveaux de confiance.
-7. Frontend React après mise à niveau Node, graphes et export HTML/SARIF.
+2. Colonnes SQL, SQL dynamique et dépendances issues d'ORM.
+3. Profondeur d'impact réglable dans l'interface et chemins critiques.
+4. Graphes interactifs, filtres et export d'image.
+5. Comparaison entre deux analyses et analyse incrémentale Git.
+6. Recherche SQLite FTS5 et indexation des fichiers/configurations.
+7. Frontend React après mise à niveau Node, puis exports PDF et SARIF.

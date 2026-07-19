@@ -65,6 +65,44 @@
       </div>
       <div id="results"></div>
     </section>
+
+    <section id="relationsCard" class="card" hidden>
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Dépendances directes et indirectes</span>
+          <h2 id="relationsTitle">Analyse d'impact</h2>
+        </div>
+        <button id="closeRelations" type="button" class="subtle">Fermer</button>
+      </div>
+      <div id="relations"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Base de données</span>
+          <h2>Objets SQL</h2>
+        </div>
+      </div>
+      <div class="row">
+        <input id="sqlQuery" autocomplete="off" placeholder="Table, vue ou procédure" disabled>
+        <button id="searchSql" type="button" disabled>Rechercher</button>
+      </div>
+      <div id="sqlResults" class="empty">Sélectionnez une analyse terminée.</div>
+      <div id="sqlReferences" hidden></div>
+    </section>
+
+    <section class="card documentation-card">
+      <div>
+        <span class="eyebrow">Synthèse locale</span>
+        <h2>Documentation technique</h2>
+        <p>Résumé de l'architecture, endpoints, objets SQL, packages et zones complexes, sans envoi vers un service externe.</p>
+      </div>
+      <div class="result-actions">
+        <button id="viewDocumentation" type="button" class="subtle" disabled>Consulter</button>
+        <button id="downloadDocumentation" type="button" disabled>Exporter en HTML</button>
+      </div>
+    </section>
   </main>
   <script src="app.js"></script>
 </body>

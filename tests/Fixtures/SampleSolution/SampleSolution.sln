@@ -1,0 +1,15 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sample.Web", "Sample.Web\Sample.Web.csproj", "{77FEBA40-D7C1-4F9A-9F4A-A2E6ECBA27D8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77FEBA40-D7C1-4F9A-9F4A-A2E6ECBA27D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77FEBA40-D7C1-4F9A-9F4A-A2E6ECBA27D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+EndGlobal

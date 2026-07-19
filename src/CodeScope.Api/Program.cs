@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using CodeScope.Api;
 using CodeScope.Application;
@@ -17,12 +18,15 @@ builder.Services.AddDbContext<CodeScopeDbContext>(options =>
     options.UseSqlite($"Data Source={Path.Combine(dataDir, "codescope.db")}"));
 builder.Services.AddScoped<IAnalysisRepository, AnalysisRepository>();
 builder.Services.AddScoped<IProjectScanner, ProjectScanner>();
+builder.Services.AddScoped<IImpactAnalysisService, ImpactAnalysisService>();
+builder.Services.AddScoped<IDocumentationGenerator, DocumentationGenerator>();
 builder.Services.AddSingleton<IAnalysisJobQueue, AnalysisJobQueue>();
 builder.Services.AddHostedService<AnalysisWorker>();
 
 var app = builder.Build();
 using (var scope = app.Services.CreateScope())
-    await scope.ServiceProvider.GetRequiredService<CodeScopeDbContext>().Database.EnsureCreatedAsync();
+    await DatabaseSchemaInitializer.EnsureCompatibleSchemaAsync(
+        scope.ServiceProvider.GetRequiredService<CodeScopeDbContext>());
 
 app.UseExceptionHandler(errorApplication => errorApplication.Run(async context =>
 {
@@ -82,7 +86,21 @@ app.MapGet("/api/analyses/{id:guid}", async (
     Guid id,
     IAnalysisRepository repository,
     CancellationToken ct) =>
-    await repository.GetAsync(id, ct) is { } analysis ? Results.Ok(analysis) : Results.NotFound());
+{
+    var analysis = await repository.GetAsync(id, ct);
+    return analysis is null
+        ? Results.NotFound()
+        : Results.Ok(new
+        {
+            analysis.Id,
+            analysis.RootPath,
+            analysis.Status,
+            analysis.CreatedAt,
+            analysis.CompletedAt,
+            analysis.Error,
+            analysis.Projects
+        });
+});
 
 app.MapGet("/api/analyses/{id:guid}/progress", async (
     Guid id,
@@ -105,8 +123,8 @@ app.MapPost("/api/analyses/{id:guid}/cancel", async (
 {
     if (!queue.TryCancel(id))
     {
-        var analysis = await repository.GetAsync(id, ct);
-        if (analysis is null) return Results.NotFound();
+        var existingStatus = await repository.GetStatusAsync(id, ct);
+        if (!existingStatus.HasValue) return Results.NotFound();
         return Results.Conflict(new { error = "Cette analyse ne peut plus être annulée." });
     }
 
@@ -124,8 +142,8 @@ app.MapDelete("/api/analyses/{id:guid}", async (
     if (snapshot?.Status is AnalysisStatus.Pending or AnalysisStatus.Running)
         return Results.Conflict(new { error = "Annulez l'analyse avant de la supprimer." });
 
-    var analysis = await repository.GetAsync(id, ct);
-    if (analysis is null) return Results.NotFound();
+    var existingStatus = await repository.GetStatusAsync(id, ct);
+    if (!existingStatus.HasValue) return Results.NotFound();
     queue.Remove(id);
     await repository.DeleteAsync(id, ct);
     return Results.NoContent();
@@ -152,7 +170,16 @@ app.MapGet("/api/analyses/{id:guid}/dashboard", async (
         symbols.Where(symbol => symbol.Kind == SymbolKind.Method)
             .Select(symbol => symbol.Complexity)
             .DefaultIfEmpty()
-            .Max()));
+            .Max(),
+        analysis.Relations.Count,
+        analysis.Relations.Count(relation => relation.Kind == RelationKind.Calls),
+        analysis.SqlObjects.Count,
+        analysis.SqlReferences.Count,
+        analysis.Endpoints.Count,
+        analysis.Projects.SelectMany(project => project.Packages)
+            .Select(package => package.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count()));
 });
 
 app.MapGet("/api/analyses/{id:guid}/search", (
@@ -161,6 +188,100 @@ app.MapGet("/api/analyses/{id:guid}/search", (
     IAnalysisRepository repository,
     CancellationToken ct) =>
     repository.SearchAsync(id, q?.Trim() ?? string.Empty, ct));
+
+app.MapGet("/api/analyses/{id:guid}/relations", async (
+    Guid id,
+    Guid? symbolId,
+    IAnalysisRepository repository,
+    CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed)
+        return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+
+    return Results.Ok(await repository.GetRelationsAsync(id, symbolId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/sql", async (
+    Guid id,
+    string? q,
+    IAnalysisRepository repository,
+    CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed)
+        return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+
+    return Results.Ok(await repository.SearchSqlAsync(id, q?.Trim() ?? string.Empty, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/sql-references", async (
+    Guid id,
+    Guid? objectId,
+    IAnalysisRepository repository,
+    CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed)
+        return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+
+    return Results.Ok(await repository.GetSqlReferencesAsync(id, objectId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/endpoints", async (
+    Guid id,
+    string? q,
+    IAnalysisRepository repository,
+    CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed)
+        return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+
+    return Results.Ok(await repository.SearchEndpointsAsync(id, q?.Trim() ?? string.Empty, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/impact", async (
+    Guid id,
+    string kind,
+    Guid elementId,
+    int? depth,
+    IImpactAnalysisService impactAnalysis,
+    CancellationToken ct) =>
+{
+    if (!Enum.TryParse<ImpactElementKind>(kind, true, out var elementKind) ||
+        elementKind == ImpactElementKind.External)
+        return Results.BadRequest(new { error = "Le type d'élément doit être CodeSymbol ou SqlObject." });
+
+    var report = await impactAnalysis.AnalyzeAsync(id, elementKind, elementId, depth ?? 2, ct);
+    return report is null ? Results.NotFound() : Results.Ok(report);
+});
+
+app.MapGet("/api/analyses/{id:guid}/documentation", async (
+    Guid id,
+    IDocumentationGenerator generator,
+    CancellationToken ct) =>
+{
+    var documentation = await generator.GenerateHtmlAsync(id, ct);
+    return documentation is null
+        ? Results.NotFound()
+        : Results.Content(documentation.Html, "text/html", Encoding.UTF8);
+});
+
+app.MapGet("/api/analyses/{id:guid}/documentation/export", async (
+    Guid id,
+    IDocumentationGenerator generator,
+    CancellationToken ct) =>
+{
+    var documentation = await generator.GenerateHtmlAsync(id, ct);
+    return documentation is null
+        ? Results.NotFound()
+        : Results.File(Encoding.UTF8.GetBytes(documentation.Html), "text/html; charset=utf-8", documentation.FileName);
+});
 
 app.MapFallbackToFile("index.html");
 app.Run();

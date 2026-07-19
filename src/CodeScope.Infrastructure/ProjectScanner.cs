@@ -20,6 +20,40 @@ public sealed class ProjectScanner : IProjectScanner
     {
         var fullRoot = Path.GetFullPath(rootPath);
         if (!Directory.Exists(fullRoot)) throw new DirectoryNotFoundException("Le dossier indiqué n'existe pas.");
+
+        Analysis? semanticResult = null;
+        try
+        {
+            semanticResult = await SemanticSolutionScanner.TryScanAsync(
+                analysisId,
+                fullRoot,
+                progress,
+                ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            InvalidOperationException or NotSupportedException or AggregateException)
+        {
+            progress?.Report(new AnalysisProgress(
+                "fallback",
+                $"Chargement sémantique indisponible ({exception.GetType().Name}) ; analyse syntaxique de secours.",
+                0,
+                0,
+                0,
+                0,
+                1));
+        }
+
+        if (semanticResult is not null)
+        {
+            await ApiEndpointAnalyzer.AnalyzeAsync(semanticResult, progress, ct);
+            await SqlScriptAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
+            return semanticResult;
+        }
+
         var analysis = new Analysis { Id = analysisId, RootPath = fullRoot, Status = AnalysisStatus.Running };
         var filesProcessed = 0;
         var symbolsFound = 0;
@@ -89,6 +123,8 @@ public sealed class ProjectScanner : IProjectScanner
                 warnings));
         }
 
+        await ApiEndpointAnalyzer.AnalyzeAsync(analysis, progress, ct);
+        await SqlScriptAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
         analysis.Status = AnalysisStatus.Completed;
         analysis.CompletedAt = DateTimeOffset.UtcNow;
         progress?.Report(new AnalysisProgress(
@@ -112,6 +148,7 @@ public sealed class ProjectScanner : IProjectScanner
             TargetFramework = document.Descendants()
                 .FirstOrDefault(x => x.Name.LocalName is "TargetFramework" or "TargetFrameworks")?.Value
         };
+        ProjectFileMetadata.AddPackages(project, document);
 
         foreach (var reference in document.Descendants().Where(x => x.Name.LocalName == "ProjectReference"))
         {
