@@ -23,7 +23,9 @@ public sealed class ProjectScannerTests
                 default);
             Assert.Equal(analysisId, result.Id);
             Assert.Equal(AnalysisStatus.Completed, result.Status); Assert.Single(result.Projects); Assert.Contains(result.Projects[0].Symbols, x => x.Kind == SymbolKind.Interface && x.Name == "IService"); Assert.Contains(result.Projects[0].Symbols, x => x.Kind == SymbolKind.Method && x.Name == "Run" && x.Complexity == 2);
-            Assert.Contains(progressValues, x => x.Stage == "completed" && x.SymbolsFound == 4);
+            Assert.Contains(progressValues, x => x.Stage == "completed" && x.SymbolsFound >= 4);
+            Assert.Contains(result.Projects[0].Symbols, x => x.Kind == SymbolKind.Namespace && x.Name == "Demo");
+            Assert.Contains(result.Files, file => file.RelativePath == "Service.cs" && file.Sha256.Length == 64 && file.LineCount == 1);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -95,10 +97,10 @@ EndGlobal
                 "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net6.0</TargetFramework></PropertyGroup></Project>");
             await File.WriteAllTextAsync(
                 Path.Combine(root, "Repository.cs"),
-                "namespace Demo; public sealed class Repository { public string Query() { return \"SELECT Id FROM dbo.Customers\"; } }");
+                "namespace Demo; public sealed class Repository { public string ConnectionName { get; } = \"main\"; public string Query(int id) { return $\"SELECT Id, Name FROM dbo.Customers WHERE Id = {id}\"; } }");
             await File.WriteAllTextAsync(
                 Path.Combine(root, "database.sql"),
-                @"CREATE TABLE [dbo].[Customers] (Id int NOT NULL);
+                @"CREATE TABLE [dbo].[Customers] (Id int NOT NULL, Name nvarchar(100) NULL);
 GO
 CREATE OR ALTER PROCEDURE dbo.RefreshCustomers AS
 BEGIN
@@ -126,6 +128,42 @@ END;");
                 reference.TargetSqlObjectId == table.Id &&
                 reference.Operation == SqlOperationKind.Select &&
                 reference.Confidence == RelationConfidence.Textual);
+            Assert.Contains(result.Projects[0].Symbols, symbol => symbol.Kind == SymbolKind.Property && symbol.Name == "ConnectionName" && symbol.ReturnType == "string");
+            Assert.Collection(result.SqlColumns.Where(column => column.SqlObjectId == table.Id).OrderBy(column => column.Ordinal),
+                id => { Assert.Equal("Id", id.Name); Assert.False(id.IsNullable); },
+                name => { Assert.Equal("Name", name.Name); Assert.True(name.IsNullable); });
+            Assert.Contains(result.SqlColumnReferences, reference => reference.SqlObjectId == table.Id && reference.ColumnName == "Id");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task Scan_extracts_cobol_programs_calls_and_copybooks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "codescope-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "MAIN.cbl"), @"       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MAIN.
+       PROCEDURE DIVISION.
+           COPY CUSTOMER.
+           CALL 'WORKER'.
+           STOP RUN.");
+            await File.WriteAllTextAsync(Path.Combine(root, "WORKER.cob"), @"       IDENTIFICATION DIVISION.
+       PROGRAM-ID. WORKER.
+       PROCEDURE DIVISION.
+           GOBACK.");
+            await File.WriteAllTextAsync(Path.Combine(root, "CUSTOMER.cpy"), "       01 CUSTOMER-ID PIC 9(9).");
+
+            var result = await new ProjectScanner().ScanAsync(Guid.NewGuid(), root, null, default);
+
+            var main = Assert.Single(result.CobolSymbols.Where(symbol => symbol.Kind == CobolSymbolKind.Program && symbol.Name == "MAIN"));
+            var worker = Assert.Single(result.CobolSymbols.Where(symbol => symbol.Kind == CobolSymbolKind.Program && symbol.Name == "WORKER"));
+            var copybook = Assert.Single(result.CobolSymbols.Where(symbol => symbol.Kind == CobolSymbolKind.Copybook && symbol.Name == "CUSTOMER"));
+            Assert.Contains(result.CobolRelations, relation => relation.SourceSymbolId == main.Id && relation.TargetSymbolId == worker.Id && relation.Kind == CobolRelationKind.Calls && relation.Confidence == RelationConfidence.Certain);
+            Assert.Contains(result.CobolRelations, relation => relation.SourceSymbolId == main.Id && relation.TargetSymbolId == copybook.Id && relation.Kind == CobolRelationKind.Copies);
+            Assert.Equal(3, result.Files.Count(file => file.Category == SourceFileCategory.Cobol));
         }
         finally { Directory.Delete(root, true); }
     }

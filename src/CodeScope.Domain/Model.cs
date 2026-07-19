@@ -1,13 +1,16 @@
 namespace CodeScope.Domain;
 
 public enum AnalysisStatus { Pending, Running, Completed, Failed, Cancelled }
-public enum SymbolKind { Class, Interface, Record, Enum, Method }
+public enum SymbolKind { Class, Interface, Record, Enum, Method, Namespace, Constructor, Property, Field }
 public enum RelationKind { Calls, Inherits, Implements, Creates }
 public enum RelationConfidence { Certain, Probable, Textual }
 public enum SqlObjectKind { Table, View, Procedure, Function, Trigger }
 public enum SqlOperationKind { Select, Insert, Update, Delete, Execute, Join, Reference }
-public enum ImpactElementKind { CodeSymbol, SqlObject, External }
+public enum ImpactElementKind { CodeSymbol, SqlObject, External, CobolSymbol }
 public enum ImpactRisk { Low, Medium, High, Critical }
+public enum SourceFileCategory { SourceCode, Configuration, Sql, Cobol, Project, Solution, Documentation, Other }
+public enum CobolSymbolKind { Program, Section, Paragraph, Copybook }
+public enum CobolRelationKind { Calls, Copies }
 
 public sealed class Analysis
 {
@@ -22,6 +25,12 @@ public sealed class Analysis
     public List<SqlObject> SqlObjects { get; set; } = new();
     public List<SqlReference> SqlReferences { get; set; } = new();
     public List<ApiEndpoint> Endpoints { get; set; } = new();
+    public List<SourceFileInfo> Files { get; set; } = new();
+    public List<RepositorySnapshot> RepositorySnapshots { get; set; } = new();
+    public List<SqlColumn> SqlColumns { get; set; } = new();
+    public List<SqlColumnReference> SqlColumnReferences { get; set; } = new();
+    public List<CobolSymbol> CobolSymbols { get; set; } = new();
+    public List<CobolRelation> CobolRelations { get; set; } = new();
 }
 
 public sealed class ProjectInfo
@@ -114,6 +123,85 @@ public sealed class ApiEndpoint
     public string Route { get; set; } = "";
     public string HandlerDisplay { get; set; } = "";
     public RelationConfidence Confidence { get; set; } = RelationConfidence.Certain;
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
+}
+
+public sealed class SourceFileInfo
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid? ProjectInfoId { get; set; }
+    public string RelativePath { get; set; } = "";
+    public string FullPath { get; set; } = "";
+    public string Extension { get; set; } = "";
+    public SourceFileCategory Category { get; set; }
+    public long Size { get; set; }
+    public int LineCount { get; set; }
+    public string Sha256 { get; set; } = "";
+    public DateTimeOffset LastWriteUtc { get; set; }
+}
+
+public sealed class RepositorySnapshot
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public bool IsGitRepository { get; set; }
+    public string? RepositoryRoot { get; set; }
+    public string? CommitHash { get; set; }
+    public string? Branch { get; set; }
+    public bool IsDirty { get; set; }
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SqlColumn
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid SqlObjectId { get; set; }
+    public string Name { get; set; } = "";
+    public string? DataType { get; set; }
+    public bool? IsNullable { get; set; }
+    public int Ordinal { get; set; }
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
+}
+
+public sealed class SqlColumnReference
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid? SqlObjectId { get; set; }
+    public Guid? SqlColumnId { get; set; }
+    public Guid? SourceCodeSymbolId { get; set; }
+    public string ObjectName { get; set; } = "";
+    public string ColumnName { get; set; } = "";
+    public SqlOperationKind Operation { get; set; }
+    public RelationConfidence Confidence { get; set; }
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
+}
+
+public sealed class CobolSymbol
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public CobolSymbolKind Kind { get; set; }
+    public string Name { get; set; } = "";
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
+}
+
+public sealed class CobolRelation
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid? SourceSymbolId { get; set; }
+    public Guid? TargetSymbolId { get; set; }
+    public string SourceDisplay { get; set; } = "";
+    public string TargetDisplay { get; set; } = "";
+    public CobolRelationKind Kind { get; set; }
+    public RelationConfidence Confidence { get; set; }
     public string FilePath { get; set; } = "";
     public int Line { get; set; }
 }

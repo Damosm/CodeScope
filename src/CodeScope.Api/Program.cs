@@ -20,6 +20,9 @@ builder.Services.AddScoped<IAnalysisRepository, AnalysisRepository>();
 builder.Services.AddScoped<IProjectScanner, ProjectScanner>();
 builder.Services.AddScoped<IImpactAnalysisService, ImpactAnalysisService>();
 builder.Services.AddScoped<IDocumentationGenerator, DocumentationGenerator>();
+builder.Services.AddScoped<IDependencyGraphService, DependencyGraphService>();
+builder.Services.AddScoped<IAnalysisComparisonService, AnalysisComparisonService>();
+builder.Services.AddScoped<IAnalysisExportService, AnalysisExportService>();
 builder.Services.AddSingleton<IAnalysisJobQueue, AnalysisJobQueue>();
 builder.Services.AddHostedService<AnalysisWorker>();
 
@@ -162,7 +165,7 @@ app.MapGet("/api/analyses/{id:guid}/dashboard", async (
     var symbols = analysis.Projects.SelectMany(project => project.Symbols).ToList();
     return Results.Ok(new Dashboard(
         analysis.Projects.Count,
-        symbols.Select(symbol => symbol.FilePath).Distinct().Count(),
+        analysis.Files.Count,
         symbols.Count(symbol => symbol.Kind == SymbolKind.Class),
         symbols.Count(symbol => symbol.Kind == SymbolKind.Interface),
         symbols.Count(symbol => symbol.Kind == SymbolKind.Method),
@@ -179,7 +182,10 @@ app.MapGet("/api/analyses/{id:guid}/dashboard", async (
         analysis.Projects.SelectMany(project => project.Packages)
             .Select(package => package.Name)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count()));
+            .Count(),
+        symbols.Count(symbol => symbol.Kind == SymbolKind.Property),
+        analysis.SqlColumns.Count,
+        analysis.CobolSymbols.Count));
 });
 
 app.MapGet("/api/analyses/{id:guid}/search", (
@@ -245,6 +251,70 @@ app.MapGet("/api/analyses/{id:guid}/endpoints", async (
     return Results.Ok(await repository.SearchEndpointsAsync(id, q?.Trim() ?? string.Empty, ct));
 });
 
+app.MapGet("/api/analyses/{id:guid}/files", async (
+    Guid id,
+    string? q,
+    string? category,
+    IAnalysisRepository repository,
+    CancellationToken ct) =>
+{
+    SourceFileCategory? parsedCategory = null;
+    if (!string.IsNullOrWhiteSpace(category))
+    {
+        if (!Enum.TryParse<SourceFileCategory>(category, true, out var value))
+            return Results.BadRequest(new { error = "Catégorie de fichier inconnue." });
+        parsedCategory = value;
+    }
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.SearchFilesAsync(id, q?.Trim() ?? string.Empty, parsedCategory, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/sql-columns", async (Guid id, Guid? objectId, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.GetSqlColumnsAsync(id, objectId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/sql-column-references", async (Guid id, Guid? columnId, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.GetSqlColumnReferencesAsync(id, columnId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/cobol", async (Guid id, string? q, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.SearchCobolAsync(id, q?.Trim() ?? string.Empty, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/cobol-relations", async (Guid id, Guid? symbolId, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.GetCobolRelationsAsync(id, symbolId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/graph", async (Guid id, string? kind, int? limit, IDependencyGraphService graphs, CancellationToken ct) =>
+{
+    var graph = await graphs.BuildAsync(id, kind ?? "types", limit ?? 150, ct);
+    return graph is null ? Results.NotFound() : Results.Ok(graph);
+});
+
+app.MapGet("/api/analyses/compare", async (Guid from, Guid to, IAnalysisComparisonService comparisons, CancellationToken ct) =>
+{
+    var comparison = await comparisons.CompareAsync(from, to, ct);
+    return comparison is null ? Results.NotFound() : Results.Ok(comparison);
+});
+
 app.MapGet("/api/analyses/{id:guid}/impact", async (
     Guid id,
     string kind,
@@ -255,7 +325,7 @@ app.MapGet("/api/analyses/{id:guid}/impact", async (
 {
     if (!Enum.TryParse<ImpactElementKind>(kind, true, out var elementKind) ||
         elementKind == ImpactElementKind.External)
-        return Results.BadRequest(new { error = "Le type d'élément doit être CodeSymbol ou SqlObject." });
+        return Results.BadRequest(new { error = "Le type d'élément doit être CodeSymbol, SqlObject ou CobolSymbol." });
 
     var report = await impactAnalysis.AnalyzeAsync(id, elementKind, elementId, depth ?? 2, ct);
     return report is null ? Results.NotFound() : Results.Ok(report);
@@ -281,6 +351,18 @@ app.MapGet("/api/analyses/{id:guid}/documentation/export", async (
     return documentation is null
         ? Results.NotFound()
         : Results.File(Encoding.UTF8.GetBytes(documentation.Html), "text/html; charset=utf-8", documentation.FileName);
+});
+
+app.MapGet("/api/analyses/{id:guid}/export/pdf", async (Guid id, IAnalysisExportService exports, CancellationToken ct) =>
+{
+    var file = await exports.GeneratePdfAsync(id, ct);
+    return file is null ? Results.NotFound() : Results.File(file.Content, file.ContentType, file.FileName);
+});
+
+app.MapGet("/api/analyses/{id:guid}/export/sarif", async (Guid id, IAnalysisExportService exports, CancellationToken ct) =>
+{
+    var file = await exports.GenerateSarifAsync(id, ct);
+    return file is null ? Results.NotFound() : Results.File(file.Content, file.ContentType, file.FileName);
 });
 
 app.MapFallbackToFile("index.html");

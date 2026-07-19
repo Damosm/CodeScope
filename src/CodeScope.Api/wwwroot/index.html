@@ -57,6 +57,42 @@
       </section>
     </div>
 
+    <section class="card explorer-card">
+      <div class="section-heading">
+        <div><span class="eyebrow">Inventaire et propriétés</span><h2>Explorateur de fichiers</h2></div>
+        <div class="row compact">
+          <input id="fileQuery" autocomplete="off" placeholder="Filtrer un chemin" disabled>
+          <select id="fileCategory" disabled>
+            <option value="">Toutes catégories</option><option>SourceCode</option><option>Configuration</option>
+            <option>Sql</option><option>Cobol</option><option>Project</option><option>Solution</option>
+            <option>Documentation</option><option>Other</option>
+          </select>
+          <button id="searchFiles" type="button" disabled>Filtrer</button>
+        </div>
+      </div>
+      <div class="explorer-layout">
+        <div id="fileTree" class="file-tree empty">Sélectionnez une analyse terminée.</div>
+        <div id="fileProperties" class="file-properties empty">Cliquez sur un fichier pour afficher ses propriétés et symboles.</div>
+      </div>
+    </section>
+
+    <section class="card graph-card">
+      <div class="section-heading">
+        <div><span class="eyebrow">Dépendances interactives</span><h2>Graphes</h2></div>
+        <div class="graph-toolbar">
+          <select id="graphKind" disabled><option value="types">Types C#</option><option value="projects">Projets</option><option value="sql">SQL</option><option value="cobol">COBOL</option></select>
+          <select id="edgeFilter" disabled><option value="">Toutes relations</option></select>
+          <button id="zoomOut" type="button" class="subtle" disabled aria-label="Dézoomer">−</button>
+          <button id="zoomIn" type="button" class="subtle" disabled aria-label="Zoomer">+</button>
+          <button id="resetGraph" type="button" class="subtle" disabled>Recentrer</button>
+          <button id="exportGraph" type="button" class="subtle" disabled>PNG</button>
+        </div>
+      </div>
+      <p class="muted graph-help">Molette : zoom · glisser le fond : déplacer · glisser un nœud : réorganiser.</p>
+      <div id="graphStatus" class="empty">Sélectionnez une analyse terminée.</div>
+      <svg id="dependencyGraph" viewBox="0 0 1000 620" role="img" aria-label="Graphe de dépendances" hidden></svg>
+    </section>
+
     <section class="card">
       <h2>Recherche</h2>
       <div class="row">
@@ -92,6 +128,22 @@
       <div id="sqlReferences" hidden></div>
     </section>
 
+    <section class="card">
+      <div class="section-heading"><div><span class="eyebrow">Patrimoine mainframe</span><h2>COBOL</h2></div></div>
+      <div id="cobolResults" class="empty">Sélectionnez une analyse terminée.</div>
+    </section>
+
+    <section class="card">
+      <div><span class="eyebrow">Git et empreintes SHA-256</span><h2>Comparaison incrémentale</h2></div>
+      <div class="row compare-controls">
+        <select id="compareFrom" disabled aria-label="Analyse de départ"></select>
+        <span>→</span>
+        <select id="compareTo" disabled aria-label="Analyse d'arrivée"></select>
+        <button id="compare" type="button" disabled>Comparer</button>
+      </div>
+      <div id="comparison" class="empty">Deux analyses terminées sont nécessaires.</div>
+    </section>
+
     <section class="card documentation-card">
       <div>
         <span class="eyebrow">Synthèse locale</span>
@@ -101,6 +153,8 @@
       <div class="result-actions">
         <button id="viewDocumentation" type="button" class="subtle" disabled>Consulter</button>
         <button id="downloadDocumentation" type="button" disabled>Exporter en HTML</button>
+        <button id="downloadPdf" type="button" disabled>Exporter en PDF</button>
+        <button id="downloadSarif" type="button" class="subtle" disabled>Exporter en SARIF</button>
       </div>
     </section>
   </main>

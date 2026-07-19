@@ -24,6 +24,12 @@ public sealed class AnalysisRepository : IAnalysisRepository
             .Include(x => x.SqlObjects)
             .Include(x => x.SqlReferences)
             .Include(x => x.Endpoints)
+            .Include(x => x.Files)
+            .Include(x => x.RepositorySnapshots)
+            .Include(x => x.SqlColumns)
+            .Include(x => x.SqlColumnReferences)
+            .Include(x => x.CobolSymbols)
+            .Include(x => x.CobolRelations)
             .SingleAsync(x => x.Id == result.Id, ct);
 
         if (analysis.Projects.Count > 0)
@@ -36,6 +42,12 @@ public sealed class AnalysisRepository : IAnalysisRepository
             _db.SqlReferences.RemoveRange(analysis.SqlReferences);
         if (analysis.Endpoints.Count > 0)
             _db.ApiEndpoints.RemoveRange(analysis.Endpoints);
+        if (analysis.Files.Count > 0) _db.SourceFiles.RemoveRange(analysis.Files);
+        if (analysis.RepositorySnapshots.Count > 0) _db.RepositorySnapshots.RemoveRange(analysis.RepositorySnapshots);
+        if (analysis.SqlColumns.Count > 0) _db.SqlColumns.RemoveRange(analysis.SqlColumns);
+        if (analysis.SqlColumnReferences.Count > 0) _db.SqlColumnReferences.RemoveRange(analysis.SqlColumnReferences);
+        if (analysis.CobolSymbols.Count > 0) _db.CobolSymbols.RemoveRange(analysis.CobolSymbols);
+        if (analysis.CobolRelations.Count > 0) _db.CobolRelations.RemoveRange(analysis.CobolRelations);
 
         analysis.Status = AnalysisStatus.Completed;
         analysis.CompletedAt = result.CompletedAt ?? DateTimeOffset.UtcNow;
@@ -71,6 +83,13 @@ public sealed class AnalysisRepository : IAnalysisRepository
             _db.ApiEndpoints.Add(endpoint);
         }
 
+        foreach (var file in result.Files) { file.AnalysisId = analysis.Id; _db.SourceFiles.Add(file); }
+        foreach (var snapshot in result.RepositorySnapshots) { snapshot.AnalysisId = analysis.Id; _db.RepositorySnapshots.Add(snapshot); }
+        foreach (var column in result.SqlColumns) { column.AnalysisId = analysis.Id; _db.SqlColumns.Add(column); }
+        foreach (var reference in result.SqlColumnReferences) { reference.AnalysisId = analysis.Id; _db.SqlColumnReferences.Add(reference); }
+        foreach (var symbol in result.CobolSymbols) { symbol.AnalysisId = analysis.Id; _db.CobolSymbols.Add(symbol); }
+        foreach (var relation in result.CobolRelations) { relation.AnalysisId = analysis.Id; _db.CobolRelations.Add(relation); }
+
         await _db.SaveChangesAsync(ct);
     }
 
@@ -105,6 +124,12 @@ public sealed class AnalysisRepository : IAnalysisRepository
         .Include(x => x.SqlObjects)
         .Include(x => x.SqlReferences)
         .Include(x => x.Endpoints)
+        .Include(x => x.Files)
+        .Include(x => x.RepositorySnapshots)
+        .Include(x => x.SqlColumns)
+        .Include(x => x.SqlColumnReferences)
+        .Include(x => x.CobolSymbols)
+        .Include(x => x.CobolRelations)
         .SingleOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<AnalysisStatus?> GetStatusAsync(Guid id, CancellationToken ct) =>
@@ -159,4 +184,30 @@ public sealed class AnalysisRepository : IAnalysisRepository
             .ThenBy(x => x.HttpMethod)
             .Take(500)
             .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<SourceFileInfo>> SearchFilesAsync(Guid id, string query, SourceFileCategory? category, CancellationToken ct) =>
+        await _db.SourceFiles.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!category.HasValue || x.Category == category) &&
+                (query == "" || x.RelativePath.Contains(query)))
+            .OrderBy(x => x.RelativePath).Take(2000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<SqlColumn>> GetSqlColumnsAsync(Guid id, Guid? objectId, CancellationToken ct) =>
+        await _db.SqlColumns.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!objectId.HasValue || x.SqlObjectId == objectId))
+            .OrderBy(x => x.SqlObjectId).ThenBy(x => x.Ordinal).Take(2000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<SqlColumnReference>> GetSqlColumnReferencesAsync(Guid id, Guid? columnId, CancellationToken ct) =>
+        await _db.SqlColumnReferences.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!columnId.HasValue || x.SqlColumnId == columnId))
+            .OrderBy(x => x.ObjectName).ThenBy(x => x.Line).Take(2000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<CobolSymbol>> SearchCobolAsync(Guid id, string query, CancellationToken ct) =>
+        await _db.CobolSymbols.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (query == "" || x.Name.Contains(query)))
+            .OrderBy(x => x.Name).Take(1000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<CobolRelation>> GetCobolRelationsAsync(Guid id, Guid? symbolId, CancellationToken ct) =>
+        await _db.CobolRelations.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!symbolId.HasValue || x.SourceSymbolId == symbolId || x.TargetSymbolId == symbolId))
+            .OrderBy(x => x.SourceDisplay).ThenBy(x => x.TargetDisplay).Take(1000).ToListAsync(ct);
 }

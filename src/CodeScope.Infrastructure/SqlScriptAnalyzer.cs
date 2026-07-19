@@ -28,6 +28,9 @@ internal static class SqlScriptAnalyzer
     };
 
     private static readonly Regex NameTokenRegex = new(QualifiedNamePattern, Options);
+    private static readonly Regex InsertColumnsRegex = new(@"\bINSERT\s+(?:INTO\s+)?(?<name>" + QualifiedNamePattern + @")\s*\((?<columns>[^)]*)\)", Options);
+    private static readonly Regex UpdateColumnsRegex = new(@"\bUPDATE\s+(?<name>" + QualifiedNamePattern + @")\s+SET\s+(?<columns>.*?)(?:\bWHERE\b|;|$)", Options | RegexOptions.Singleline);
+    private static readonly Regex SelectColumnsRegex = new(@"\bSELECT\s+(?<columns>.*?)\s+FROM\s+(?<name>" + QualifiedNamePattern + @")", Options | RegexOptions.Singleline);
     private static readonly HashSet<string> Excluded = new(StringComparer.OrdinalIgnoreCase)
         { ".git", ".vs", "bin", "obj", "node_modules", "packages" };
     private const RegexOptions Options = RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
@@ -68,6 +71,8 @@ internal static class SqlScriptAnalyzer
                     };
                     analysis.SqlObjects.Add(sqlObject);
                     parsed.Definitions.Add(new DefinitionContext(match.Index, sqlObject));
+                    if (sqlObject.Kind == SqlObjectKind.Table)
+                        ExtractDefinedColumns(analysis, sqlObject, sanitized, match.Index + match.Length);
                 }
                 parsedFiles.Add(parsed);
             }
@@ -90,7 +95,10 @@ internal static class SqlScriptAnalyzer
         var shortNameLookup = BuildLookup(analysis.SqlObjects, sqlObject => ShortName(sqlObject.Name));
         var referenceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var parsed in parsedFiles)
+        {
             ExtractSqlReferences(analysis, parsed, objectLookup, shortNameLookup, referenceKeys);
+            ExtractColumnReferences(analysis, parsed, objectLookup, shortNameLookup);
+        }
 
         if (analysis.SqlObjects.Count > 0)
             await ExtractCodeReferencesAsync(
@@ -170,12 +178,18 @@ internal static class SqlScriptAnalyzer
 
             var root = await CSharpSyntaxTree.ParseText(sourceText, cancellationToken: cancellationToken)
                 .GetRootAsync(cancellationToken);
-            foreach (var literal in root.DescendantNodes().OfType<LiteralExpressionSyntax>()
-                .Where(node => node.IsKind(SyntaxKind.StringLiteralExpression)))
+            var expressions = root.DescendantNodes()
+                .Where(node => node is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression) ||
+                    node is InterpolatedStringExpressionSyntax ||
+                    node is BinaryExpressionSyntax binary && binary.IsKind(SyntaxKind.AddExpression) &&
+                        binary.Parent is not BinaryExpressionSyntax)
+                .Select(node => (Node: node, Value: ExtractString(node)))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Value));
+            foreach (var expression in expressions)
             {
-                var value = literal.Token.ValueText;
+                var value = expression.Value!;
                 if (string.IsNullOrWhiteSpace(value)) continue;
-                var line = literal.SyntaxTree.GetLineSpan(literal.Span).StartLinePosition.Line + 1;
+                var line = expression.Node.SyntaxTree.GetLineSpan(expression.Node.Span).StartLinePosition.Line + 1;
                 var sourceSymbol = fileGroup
                     .Where(symbol => symbol.Line <= line && line < symbol.Line + Math.Max(1, symbol.LineCount))
                     .OrderBy(symbol => symbol.Kind == SymbolKind.Method ? 0 : 1)
@@ -199,9 +213,169 @@ internal static class SqlScriptAnalyzer
                         fileGroup.Key,
                         line,
                         referenceKeys);
+                    ExtractCodeColumnReferences(analysis, target, sourceSymbol?.Id, value, fileGroup.Key, line);
                 }
             }
         }
+    }
+
+    private static void ExtractCodeColumnReferences(
+        Analysis analysis,
+        SqlObject target,
+        Guid? sourceSymbolId,
+        string sqlText,
+        string filePath,
+        int line)
+    {
+        var operation = InferOperation(sqlText, Math.Max(0, sqlText.IndexOf(target.Name, StringComparison.OrdinalIgnoreCase)));
+        foreach (var column in analysis.SqlColumns.Where(column => column.SqlObjectId == target.Id))
+        {
+            if (!Regex.IsMatch(sqlText, $@"(?<![A-Za-z0-9_]){Regex.Escape(column.Name)}(?![A-Za-z0-9_])", Options)) continue;
+            if (analysis.SqlColumnReferences.Any(reference => reference.SourceCodeSymbolId == sourceSymbolId && reference.SqlColumnId == column.Id && reference.FilePath == filePath && reference.Line == line)) continue;
+            analysis.SqlColumnReferences.Add(new SqlColumnReference
+            {
+                AnalysisId = analysis.Id,
+                SqlObjectId = target.Id,
+                SqlColumnId = column.Id,
+                SourceCodeSymbolId = sourceSymbolId,
+                ObjectName = target.Name,
+                ColumnName = column.Name,
+                Operation = operation,
+                Confidence = RelationConfidence.Textual,
+                FilePath = filePath,
+                Line = line
+            });
+        }
+    }
+
+    private static string? ExtractString(SyntaxNode node) => node switch
+    {
+        LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.StringLiteralExpression) => literal.Token.ValueText,
+        InterpolatedStringExpressionSyntax interpolated => string.Concat(interpolated.Contents.Select(content => content switch
+        {
+            InterpolatedStringTextSyntax text => text.TextToken.ValueText,
+            _ => "{dynamic}"
+        })),
+        BinaryExpressionSyntax binary when binary.IsKind(SyntaxKind.AddExpression) =>
+            string.Concat(binary.DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>()
+                .Where(literal => literal.IsKind(SyntaxKind.StringLiteralExpression))
+                .Select(literal => literal.Token.ValueText)),
+        _ => null
+    };
+
+    private static void ExtractDefinedColumns(Analysis analysis, SqlObject table, string text, int afterDefinition)
+    {
+        var open = text.IndexOf('(', afterDefinition);
+        if (open < 0) return;
+        var close = FindClosingParenthesis(text, open);
+        if (close < 0) return;
+        var ordinal = 0;
+        foreach (var segment in SplitTopLevel(text, open + 1, close))
+        {
+            var value = segment.Text.Trim();
+            if (value.Length == 0 || Regex.IsMatch(value, @"^(CONSTRAINT|PRIMARY|FOREIGN|UNIQUE|CHECK|INDEX)\b", Options)) continue;
+            var nameMatch = Regex.Match(value, "^(?<name>" + IdentifierPattern + @")\s+(?<type>[A-Za-z][A-Za-z0-9_]*(?:\s*\([^)]*\))?)", Options);
+            if (!nameMatch.Success) continue;
+            analysis.SqlColumns.Add(new SqlColumn
+            {
+                AnalysisId = analysis.Id,
+                SqlObjectId = table.Id,
+                Name = NormalizeName(nameMatch.Groups["name"].Value),
+                DataType = Regex.Replace(nameMatch.Groups["type"].Value, @"\s+", " ").Trim(),
+                IsNullable = Regex.IsMatch(value, @"\bNOT\s+NULL\b", Options) ? false :
+                    Regex.IsMatch(value, @"\bNULL\b", Options) ? true : null,
+                Ordinal = ++ordinal,
+                FilePath = table.FilePath,
+                Line = GetLine(text, segment.Start)
+            });
+        }
+    }
+
+    private static void ExtractColumnReferences(
+        Analysis analysis,
+        ParsedSqlFile parsed,
+        IReadOnlyDictionary<string, List<SqlObject>> objectLookup,
+        IReadOnlyDictionary<string, List<SqlObject>> shortNameLookup)
+    {
+        ExtractColumnPattern(analysis, parsed, InsertColumnsRegex, SqlOperationKind.Insert, objectLookup, shortNameLookup, false);
+        ExtractColumnPattern(analysis, parsed, UpdateColumnsRegex, SqlOperationKind.Update, objectLookup, shortNameLookup, true);
+        ExtractColumnPattern(analysis, parsed, SelectColumnsRegex, SqlOperationKind.Select, objectLookup, shortNameLookup, false);
+    }
+
+    private static void ExtractColumnPattern(
+        Analysis analysis,
+        ParsedSqlFile parsed,
+        Regex pattern,
+        SqlOperationKind operation,
+        IReadOnlyDictionary<string, List<SqlObject>> objectLookup,
+        IReadOnlyDictionary<string, List<SqlObject>> shortNameLookup,
+        bool assignmentList)
+    {
+        foreach (Match match in pattern.Matches(parsed.SanitizedText))
+        {
+            var objectName = NormalizeName(match.Groups["name"].Value);
+            var sqlObject = ResolveObject(objectName, objectLookup, shortNameLookup);
+            if (sqlObject is null) continue;
+            var known = analysis.SqlColumns.Where(column => column.SqlObjectId == sqlObject.Id)
+                .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var columnText = match.Groups["columns"].Value;
+            var candidates = assignmentList
+                ? Regex.Matches(columnText, @"(?:^|,)\s*(?<name>" + IdentifierPattern + @")\s*=", Options).Select(item => item.Groups["name"].Value)
+                : Regex.Matches(columnText, IdentifierPattern, Options).Select(item => item.Value);
+            foreach (var candidateValue in candidates)
+            {
+                var candidate = NormalizeName(candidateValue);
+                if (candidate == "*" || IsSqlKeyword(candidate)) continue;
+                known.TryGetValue(ShortName(candidate), out var column);
+                if (column is null) continue;
+                var key = $"{parsed.Path}|{match.Index}|{operation}|{sqlObject.Id}|{column.Id}";
+                if (analysis.SqlColumnReferences.Any(reference => $"{reference.FilePath}|{reference.Line}|{reference.Operation}|{reference.SqlObjectId}|{reference.SqlColumnId}" == key)) continue;
+                analysis.SqlColumnReferences.Add(new SqlColumnReference
+                {
+                    AnalysisId = analysis.Id,
+                    SqlObjectId = sqlObject.Id,
+                    SqlColumnId = column.Id,
+                    ObjectName = sqlObject.Name,
+                    ColumnName = column.Name,
+                    Operation = operation,
+                    Confidence = RelationConfidence.Certain,
+                    FilePath = parsed.Path,
+                    Line = GetLine(parsed.SanitizedText, match.Index)
+                });
+            }
+        }
+    }
+
+    private static bool IsSqlKeyword(string value) => value.ToUpperInvariant() is
+        "DISTINCT" or "TOP" or "AS" or "NULL" or "CASE" or "WHEN" or "THEN" or "ELSE" or "END" or "AND" or "OR";
+
+    private static int FindClosingParenthesis(string text, int open)
+    {
+        var depth = 0;
+        for (var index = open; index < text.Length; index++)
+        {
+            if (text[index] == '(') depth++;
+            else if (text[index] == ')' && --depth == 0) return index;
+        }
+        return -1;
+    }
+
+    private static IEnumerable<(string Text, int Start)> SplitTopLevel(string text, int start, int end)
+    {
+        var depth = 0;
+        var segmentStart = start;
+        for (var index = start; index < end; index++)
+        {
+            if (text[index] == '(') depth++;
+            else if (text[index] == ')') depth--;
+            else if (text[index] == ',' && depth == 0)
+            {
+                yield return (text.Substring(segmentStart, index - segmentStart), segmentStart);
+                segmentStart = index + 1;
+            }
+        }
+        yield return (text.Substring(segmentStart, end - segmentStart), segmentStart);
     }
 
     private static void AddReference(

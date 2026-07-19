@@ -166,6 +166,15 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
                 sqlObject.FilePath);
         }
 
+        foreach (var symbol in analysis.CobolSymbols)
+        {
+            graph.Nodes[Key(ImpactElementKind.CobolSymbol, symbol.Id)] = new NodeDefinition(
+                symbol.Id,
+                ImpactElementKind.CobolSymbol,
+                symbol.Name,
+                symbol.FilePath);
+        }
+
         foreach (var relation in analysis.Relations)
         {
             var sourceKey = Key(ImpactElementKind.CodeSymbol, relation.SourceSymbolId);
@@ -205,6 +214,22 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
                 SqlForwardLabel(reference.Operation),
                 "est référencé par",
                 reference.Confidence);
+        }
+
+        foreach (var relation in analysis.CobolRelations)
+        {
+            var sourceKey = relation.SourceSymbolId.HasValue
+                ? Key(ImpactElementKind.CobolSymbol, relation.SourceSymbolId.Value)
+                : ExternalKey(relation.SourceDisplay);
+            var targetKey = relation.TargetSymbolId.HasValue
+                ? Key(ImpactElementKind.CobolSymbol, relation.TargetSymbolId.Value)
+                : ExternalKey(relation.TargetDisplay);
+            if (!graph.Nodes.ContainsKey(sourceKey)) graph.Nodes[sourceKey] = new NodeDefinition(null, ImpactElementKind.External, relation.SourceDisplay, relation.FilePath);
+            if (!graph.Nodes.ContainsKey(targetKey)) graph.Nodes[targetKey] = new NodeDefinition(null, ImpactElementKind.External, relation.TargetDisplay, null);
+            AddBidirectional(graph, sourceKey, targetKey,
+                relation.Kind == CobolRelationKind.Calls ? "appelle" : "copie",
+                relation.Kind == CobolRelationKind.Calls ? "est appelé par" : "est copié par",
+                relation.Confidence);
         }
 
         return graph;
@@ -273,6 +298,7 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
     {
         ImpactElementKind.CodeSymbol => $"code:{id:N}",
         ImpactElementKind.SqlObject => $"sql:{id:N}",
+        ImpactElementKind.CobolSymbol => $"cobol:{id:N}",
         _ => $"external:{id:N}"
     };
 

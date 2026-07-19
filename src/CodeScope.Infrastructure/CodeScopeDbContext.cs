@@ -15,6 +15,12 @@ public sealed class CodeScopeDbContext : DbContext
     public DbSet<SqlObject> SqlObjects => Set<SqlObject>();
     public DbSet<SqlReference> SqlReferences => Set<SqlReference>();
     public DbSet<ApiEndpoint> ApiEndpoints => Set<ApiEndpoint>();
+    public DbSet<SourceFileInfo> SourceFiles => Set<SourceFileInfo>();
+    public DbSet<RepositorySnapshot> RepositorySnapshots => Set<RepositorySnapshot>();
+    public DbSet<SqlColumn> SqlColumns => Set<SqlColumn>();
+    public DbSet<SqlColumnReference> SqlColumnReferences => Set<SqlColumnReference>();
+    public DbSet<CobolSymbol> CobolSymbols => Set<CobolSymbol>();
+    public DbSet<CobolRelation> CobolRelations => Set<CobolRelation>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -23,6 +29,12 @@ public sealed class CodeScopeDbContext : DbContext
         b.Entity<Analysis>().HasMany(x => x.SqlObjects).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Analysis>().HasMany(x => x.SqlReferences).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Analysis>().HasMany(x => x.Endpoints).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.Files).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.RepositorySnapshots).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.SqlColumns).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.SqlColumnReferences).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.CobolSymbols).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.CobolRelations).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.Symbols).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.References).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.Packages).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
@@ -35,5 +47,11 @@ public sealed class CodeScopeDbContext : DbContext
         b.Entity<SqlReference>().HasIndex(x => new { x.AnalysisId, x.TargetSqlObjectId });
         b.Entity<PackageReferenceInfo>().HasIndex(x => new { x.ProjectInfoId, x.Name });
         b.Entity<ApiEndpoint>().HasIndex(x => new { x.AnalysisId, x.Route });
+        b.Entity<SourceFileInfo>().HasIndex(x => new { x.AnalysisId, x.RelativePath }).IsUnique();
+        b.Entity<RepositorySnapshot>().HasIndex(x => x.AnalysisId);
+        b.Entity<SqlColumn>().HasIndex(x => new { x.SqlObjectId, x.Name });
+        b.Entity<SqlColumnReference>().HasIndex(x => new { x.AnalysisId, x.SqlColumnId });
+        b.Entity<CobolSymbol>().HasIndex(x => new { x.AnalysisId, x.Name });
+        b.Entity<CobolRelation>().HasIndex(x => new { x.AnalysisId, x.SourceSymbolId });
     }
 }

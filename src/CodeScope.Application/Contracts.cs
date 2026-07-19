@@ -25,6 +25,11 @@ public interface IAnalysisRepository
     Task<IReadOnlyList<SqlObject>> SearchSqlAsync(Guid analysisId, string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<SqlReference>> GetSqlReferencesAsync(Guid analysisId, Guid? objectId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ApiEndpoint>> SearchEndpointsAsync(Guid analysisId, string query, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SourceFileInfo>> SearchFilesAsync(Guid analysisId, string query, SourceFileCategory? category, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SqlColumn>> GetSqlColumnsAsync(Guid analysisId, Guid? objectId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SqlColumnReference>> GetSqlColumnReferencesAsync(Guid analysisId, Guid? columnId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CobolSymbol>> SearchCobolAsync(Guid analysisId, string query, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CobolRelation>> GetCobolRelationsAsync(Guid analysisId, Guid? symbolId, CancellationToken cancellationToken);
 }
 
 public interface IAnalysisJobQueue
@@ -54,6 +59,22 @@ public interface IDocumentationGenerator
     Task<GeneratedDocumentation?> GenerateHtmlAsync(
         Guid analysisId,
         CancellationToken cancellationToken);
+}
+
+public interface IDependencyGraphService
+{
+    Task<GraphData?> BuildAsync(Guid analysisId, string kind, int limit, CancellationToken cancellationToken);
+}
+
+public interface IAnalysisComparisonService
+{
+    Task<AnalysisComparison?> CompareAsync(Guid fromAnalysisId, Guid toAnalysisId, CancellationToken cancellationToken);
+}
+
+public interface IAnalysisExportService
+{
+    Task<GeneratedFile?> GeneratePdfAsync(Guid analysisId, CancellationToken cancellationToken);
+    Task<GeneratedFile?> GenerateSarifAsync(Guid analysisId, CancellationToken cancellationToken);
 }
 
 public sealed record QueuedAnalysis(Guid Id, string RootPath, CancellationToken CancellationToken);
@@ -92,7 +113,10 @@ public sealed record Dashboard(
     int SqlObjects,
     int SqlReferences,
     int Endpoints,
-    int Packages);
+    int Packages,
+    int Properties = 0,
+    int SqlColumns = 0,
+    int CobolSymbols = 0);
 
 public sealed record ImpactNode(
     string Key,
@@ -124,3 +148,19 @@ public sealed record ImpactReport(
     bool Truncated);
 
 public sealed record GeneratedDocumentation(string FileName, string Html);
+public sealed record GeneratedFile(string FileName, string ContentType, byte[] Content);
+
+public sealed record GraphNode(string Id, string Label, string Kind, string? Group, string? FilePath, int Weight);
+public sealed record GraphEdge(string Source, string Target, string Kind, RelationConfidence Confidence);
+public sealed record GraphData(string Kind, IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges, bool Truncated);
+
+public sealed record ComparisonItem(string Key, string Kind, string? FilePath, string Change);
+public sealed record AnalysisComparison(
+    Guid FromAnalysisId,
+    Guid ToAnalysisId,
+    string? FromCommit,
+    string? ToCommit,
+    IReadOnlyList<ComparisonItem> Added,
+    IReadOnlyList<ComparisonItem> Removed,
+    IReadOnlyList<ComparisonItem> Modified,
+    int UnchangedFiles);

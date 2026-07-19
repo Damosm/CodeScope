@@ -45,11 +45,14 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
 
         html.Append("<h2>Résumé</h2><div class=\"metrics\">");
         Metric(html, "Projets", analysis.Projects.Count);
-        Metric(html, "Fichiers C#", symbols.Select(symbol => symbol.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Metric(html, "Fichiers", analysis.Files.Count);
         Metric(html, "Classes", symbols.Count(symbol => symbol.Kind is SymbolKind.Class or SymbolKind.Record));
         Metric(html, "Méthodes", methods.Count);
+        Metric(html, "Propriétés", symbols.Count(symbol => symbol.Kind == SymbolKind.Property));
         Metric(html, "Endpoints", analysis.Endpoints.Count);
         Metric(html, "Objets SQL", analysis.SqlObjects.Count);
+        Metric(html, "Colonnes SQL", analysis.SqlColumns.Count);
+        Metric(html, "Symboles COBOL", analysis.CobolSymbols.Count);
         Metric(html, "Relations", analysis.Relations.Count + analysis.SqlReferences.Count);
         html.Append("</div>");
 
@@ -89,8 +92,20 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
                     .Append(E(sqlObject.Name)).Append("</strong></td><td><code>").Append(E(sqlObject.FilePath)).Append(":")
                     .Append(sqlObject.Line).Append("</code></td><td>")
                     .Append(analysis.SqlReferences.Count(reference => reference.SourceSqlObjectId == sqlObject.Id || reference.TargetSqlObjectId == sqlObject.Id))
+                    .Append(" référence(s), ").Append(analysis.SqlColumns.Count(column => column.SqlObjectId == sqlObject.Id)).Append(" colonne(s)")
                     .Append("</td></tr>");
             html.Append("</tbody></table>");
+        }
+
+        html.Append("<h2>Patrimoine COBOL</h2>");
+        if (analysis.CobolSymbols.Count == 0) html.Append("<p class=\"muted\">Aucun symbole COBOL détecté.</p>");
+        else
+        {
+            html.Append("<table><thead><tr><th>Type</th><th>Nom</th><th>Emplacement</th></tr></thead><tbody>");
+            foreach (var symbol in analysis.CobolSymbols.OrderBy(symbol => symbol.Kind).ThenBy(symbol => symbol.Name))
+                html.Append("<tr><td>").Append(E(symbol.Kind.ToString())).Append("</td><td><strong>").Append(E(symbol.Name))
+                    .Append("</strong></td><td><code>").Append(E(symbol.FilePath)).Append(":").Append(symbol.Line).Append("</code></td></tr>");
+            html.Append("</tbody></table><p>").Append(analysis.CobolRelations.Count).Append(" relation(s) CALL/COPY détectée(s).</p>");
         }
 
         html.Append("<h2>Packages NuGet</h2>");

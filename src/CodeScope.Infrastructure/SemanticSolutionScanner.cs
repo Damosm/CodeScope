@@ -113,10 +113,50 @@ internal static class SemanticSolutionScanner
                 symbolsFound++;
             }
 
+            foreach (var declaration in root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(declaration, cancellationToken) is not INamespaceSymbol semanticSymbol) continue;
+                var codeSymbol = New(SymbolKind.Namespace, semanticSymbol.ToDisplayString(), null, declaration, context.Document.FilePath!, context.Project.Id);
+                context.Project.Symbols.Add(codeSymbol);
+                AddSymbolKey(symbolsByKey, semanticSymbol, codeSymbol);
+                symbolDisplays[codeSymbol.Id] = semanticSymbol.ToDisplayString();
+                symbolsFound++;
+            }
+
             foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
                 if (model.GetDeclaredSymbol(method, cancellationToken) is not IMethodSymbol semanticSymbol) continue;
                 var codeSymbol = NewMethodSymbol(semanticSymbol, method, context.Project.Id, context.Document.FilePath!);
+                context.Project.Symbols.Add(codeSymbol);
+                AddSymbolKey(symbolsByKey, semanticSymbol, codeSymbol);
+                symbolDisplays[codeSymbol.Id] = Display(semanticSymbol);
+                symbolsFound++;
+            }
+
+            foreach (var constructor in root.DescendantNodes().OfType<ConstructorDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(constructor, cancellationToken) is not IMethodSymbol semanticSymbol) continue;
+                var codeSymbol = NewMemberSymbol(SymbolKind.Constructor, semanticSymbol, constructor, context.Project.Id, context.Document.FilePath!, null);
+                context.Project.Symbols.Add(codeSymbol);
+                AddSymbolKey(symbolsByKey, semanticSymbol, codeSymbol);
+                symbolDisplays[codeSymbol.Id] = Display(semanticSymbol);
+                symbolsFound++;
+            }
+
+            foreach (var property in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
+            {
+                if (model.GetDeclaredSymbol(property, cancellationToken) is not IPropertySymbol semanticSymbol) continue;
+                var codeSymbol = NewMemberSymbol(SymbolKind.Property, semanticSymbol, property, context.Project.Id, context.Document.FilePath!, semanticSymbol.Type);
+                context.Project.Symbols.Add(codeSymbol);
+                AddSymbolKey(symbolsByKey, semanticSymbol, codeSymbol);
+                symbolDisplays[codeSymbol.Id] = Display(semanticSymbol);
+                symbolsFound++;
+            }
+
+            foreach (var variable in root.DescendantNodes().OfType<FieldDeclarationSyntax>().SelectMany(field => field.Declaration.Variables))
+            {
+                if (model.GetDeclaredSymbol(variable, cancellationToken) is not IFieldSymbol semanticSymbol) continue;
+                var codeSymbol = NewMemberSymbol(SymbolKind.Field, semanticSymbol, variable, context.Project.Id, context.Document.FilePath!, semanticSymbol.Type);
                 context.Project.Symbols.Add(codeSymbol);
                 AddSymbolKey(symbolsByKey, semanticSymbol, codeSymbol);
                 symbolDisplays[codeSymbol.Id] = Display(semanticSymbol);
@@ -329,6 +369,25 @@ internal static class SemanticSolutionScanner
             projectId);
         result.ReturnType = semanticSymbol.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
         result.Complexity = CalculateComplexity(syntax);
+        return result;
+    }
+
+    private static CodeSymbol NewMemberSymbol(
+        SymbolKind kind,
+        ISymbol semanticSymbol,
+        SyntaxNode syntax,
+        Guid projectId,
+        string filePath,
+        ITypeSymbol? valueType)
+    {
+        var result = New(
+            kind,
+            semanticSymbol.Name,
+            semanticSymbol.ContainingType?.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            syntax,
+            filePath,
+            projectId);
+        result.ReturnType = valueType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
         return result;
     }
 

@@ -48,5 +48,11 @@ public sealed class DatabaseSchemaInitializerTests
         Assert.Contains("SqlReferences", tableNames);
         Assert.Contains("PackageReferences", tableNames);
         Assert.Contains("ApiEndpoints", tableNames);
+        Assert.Contains("SourceFiles", tableNames);
+        Assert.Contains("RepositorySnapshots", tableNames);
+        Assert.Contains("SqlColumns", tableNames);
+        Assert.Contains("SqlColumnReferences", tableNames);
+        Assert.Contains("CobolSymbols", tableNames);
+        Assert.Contains("CobolRelations", tableNames);
     }
 }

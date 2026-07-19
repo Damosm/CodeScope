@@ -51,6 +51,8 @@ public sealed class ProjectScanner : IProjectScanner
         {
             await ApiEndpointAnalyzer.AnalyzeAsync(semanticResult, progress, ct);
             await SqlScriptAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
+            await CobolSourceAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
+            await FileInventoryAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
             return semanticResult;
         }
 
@@ -125,6 +127,8 @@ public sealed class ProjectScanner : IProjectScanner
 
         await ApiEndpointAnalyzer.AnalyzeAsync(analysis, progress, ct);
         await SqlScriptAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
+        await CobolSourceAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
+        await FileInventoryAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
         analysis.Status = AnalysisStatus.Completed;
         analysis.CompletedAt = DateTimeOffset.UtcNow;
         progress?.Report(new AnalysisProgress(
@@ -234,6 +238,8 @@ public sealed class ProjectScanner : IProjectScanner
         var text = await File.ReadAllTextAsync(path, ct);
         var root = await CSharpSyntaxTree.ParseText(text, cancellationToken: ct).GetRootAsync(ct);
         var result = new List<CodeSymbol>();
+        foreach (var declaration in root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
+            result.Add(New(SymbolKind.Namespace, declaration.Name.ToString(), null, declaration, path, projectId));
         foreach (var type in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
         {
             var kind = type switch { InterfaceDeclarationSyntax => SymbolKind.Interface, RecordDeclarationSyntax => SymbolKind.Record, EnumDeclarationSyntax => SymbolKind.Enum, _ => SymbolKind.Class };
@@ -247,6 +253,21 @@ public sealed class ProjectScanner : IProjectScanner
                 n is IfStatementSyntax or ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or CaseSwitchLabelSyntax or ConditionalExpressionSyntax
                 || n is BinaryExpressionSyntax b &&
                    (b.RawKind == (int)SyntaxKind.LogicalAndExpression || b.RawKind == (int)SyntaxKind.LogicalOrExpression));
+            result.Add(symbol);
+        }
+        foreach (var constructor in root.DescendantNodes().OfType<ConstructorDeclarationSyntax>())
+            result.Add(New(SymbolKind.Constructor, constructor.Identifier.Text, constructor.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text, constructor, path, projectId));
+        foreach (var property in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
+        {
+            var symbol = New(SymbolKind.Property, property.Identifier.Text, property.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text, property, path, projectId);
+            symbol.ReturnType = property.Type.ToString();
+            result.Add(symbol);
+        }
+        foreach (var field in root.DescendantNodes().OfType<FieldDeclarationSyntax>())
+        foreach (var variable in field.Declaration.Variables)
+        {
+            var symbol = New(SymbolKind.Field, variable.Identifier.Text, field.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text, variable, path, projectId);
+            symbol.ReturnType = field.Declaration.Type.ToString();
             result.Add(symbol);
         }
         return result;
