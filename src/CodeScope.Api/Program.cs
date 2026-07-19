@@ -185,7 +185,8 @@ app.MapGet("/api/analyses/{id:guid}/dashboard", async (
             .Count(),
         symbols.Count(symbol => symbol.Kind == SymbolKind.Property),
         analysis.SqlColumns.Count,
-        analysis.CobolSymbols.Count));
+        analysis.CobolSymbols.Count,
+        analysis.Diagnostics.Count));
 });
 
 app.MapGet("/api/analyses/{id:guid}/search", (
@@ -301,6 +302,20 @@ app.MapGet("/api/analyses/{id:guid}/cobol-relations", async (Guid id, Guid? symb
     if (!status.HasValue) return Results.NotFound();
     if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
     return Results.Ok(await repository.GetCobolRelationsAsync(id, symbolId, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/diagnostics", async (Guid id, string? severity, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    DiagnosticSeverity? parsedSeverity = null;
+    if (!string.IsNullOrWhiteSpace(severity))
+    {
+        if (!Enum.TryParse<DiagnosticSeverity>(severity, true, out var value))
+            return Results.BadRequest(new { error = "Niveau de diagnostic inconnu." });
+        parsedSeverity = value;
+    }
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    return Results.Ok(await repository.GetDiagnosticsAsync(id, parsedSeverity, ct));
 });
 
 app.MapGet("/api/analyses/{id:guid}/graph", async (Guid id, string? kind, int? limit, IDependencyGraphService graphs, CancellationToken ct) =>

@@ -21,6 +21,7 @@ const elements = {
   relationsTitle: document.querySelector('#relationsTitle'),
   relations: document.querySelector('#relations'),
   closeRelations: document.querySelector('#closeRelations'),
+  impactDepth: document.querySelector('#impactDepth'),
   sqlQuery: document.querySelector('#sqlQuery'),
   searchSql: document.querySelector('#searchSql'),
   sqlResults: document.querySelector('#sqlResults'),
@@ -43,6 +44,8 @@ const elements = {
   compareTo: document.querySelector('#compareTo'),
   compare: document.querySelector('#compare'),
   comparison: document.querySelector('#comparison'),
+  diagnosticSeverity: document.querySelector('#diagnosticSeverity'),
+  diagnostics: document.querySelector('#diagnostics'),
   viewDocumentation: document.querySelector('#viewDocumentation'),
   downloadDocumentation: document.querySelector('#downloadDocumentation'),
   downloadPdf: document.querySelector('#downloadPdf'),
@@ -57,6 +60,7 @@ let completedAnalyses = [];
 let graphData = null;
 let graphTransform = { x: 0, y: 0, scale: 1 };
 let graphPositions = new Map();
+let currentImpact = null;
 
 const terminalStatuses = new Set(['completed', 'failed', 'cancelled']);
 const statusLabels = {
@@ -82,7 +86,8 @@ const metricLabels = {
   packages: 'Packages NuGet',
   properties: 'Propriétés C#',
   sqlColumns: 'Colonnes SQL',
-  cobolSymbols: 'Symboles COBOL'
+  cobolSymbols: 'Symboles COBOL',
+  diagnostics: 'Diagnostics'
 };
 const riskLabels = {
   low: 'Faible',
@@ -130,6 +135,9 @@ elements.query.addEventListener('keydown', event => {
 });
 elements.refreshHistory.addEventListener('click', loadHistory);
 elements.closeRelations.addEventListener('click', () => { elements.relationsCard.hidden = true; });
+elements.impactDepth.addEventListener('change', () => {
+  if (currentImpact) showImpact(currentImpact.kind, currentImpact.elementId, currentImpact.elementName);
+});
 elements.results.addEventListener('click', event => {
   const button = event.target.closest('button[data-symbol-id]');
   if (button) showImpact('CodeSymbol', button.dataset.symbolId, button.dataset.symbolName);
@@ -160,6 +168,7 @@ elements.zoomOut.addEventListener('click', () => zoomGraph(1 / 1.2));
 elements.resetGraph.addEventListener('click', resetGraphView);
 elements.exportGraph.addEventListener('click', exportGraphPng);
 elements.compare.addEventListener('click', compareAnalyses);
+elements.diagnosticSeverity.addEventListener('change', loadDiagnostics);
 elements.viewDocumentation.addEventListener('click', () => {
   if (currentId) window.open(`/api/analyses/${currentId}/documentation`, '_blank', 'noopener');
 });
@@ -244,9 +253,10 @@ async function loadAnalysis(id) {
   elements.fileQuery.disabled = false;
   elements.fileCategory.disabled = false;
   elements.searchFiles.disabled = false;
+  elements.diagnosticSeverity.disabled = false;
   [elements.graphKind, elements.edgeFilter, elements.zoomOut, elements.zoomIn, elements.resetGraph, elements.exportGraph]
     .forEach(element => { element.disabled = false; });
-  await Promise.all([loadSqlObjects(), loadFiles(), loadGraph(), loadCobol()]);
+  await Promise.all([loadSqlObjects(), loadFiles(), loadGraph(), loadCobol(), loadDiagnostics()]);
 }
 
 async function renderDashboard(id) {
@@ -384,12 +394,14 @@ async function search() {
 
 async function showImpact(kind, elementId, elementName) {
   if (!currentId || !elementId) return;
+  currentImpact = { kind, elementId, elementName };
   elements.relationsCard.hidden = false;
   elements.relationsTitle.textContent = `Impact de ${elementName || 'cet élément'}`;
   elements.relations.innerHTML = '<p class="empty">Calcul de l’impact…</p>';
   elements.relationsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
-    const report = await api(`/api/analyses/${currentId}/impact?kind=${encodeURIComponent(kind)}&elementId=${encodeURIComponent(elementId)}&depth=2`);
+    const depth = Number(elements.impactDepth.value || 2);
+    const report = await api(`/api/analyses/${currentId}/impact?kind=${encodeURIComponent(kind)}&elementId=${encodeURIComponent(elementId)}&depth=${depth}`);
     const risk = normalizeStatus(report.risk);
     const reasons = (report.reasons || []).map(reason => `<li>${escapeHtml(reason)}</li>`).join('');
     const nodes = (report.nodes || []).map(node => `<article class="relation impact-node">
@@ -400,6 +412,7 @@ async function showImpact(kind, elementId, elementName) {
       </div>
       <small>${escapeHtml(node.kind)} · confiance ${escapeHtml(normalizeStatus(node.confidence))}${node.filePath ? ` · ${escapeHtml(node.filePath)}` : ''}</small>
     </article>`).join('');
+    const paths = (report.criticalPaths || []).map(path => `<article class="critical-path"><span>Profondeur ${path.depth} · confiance ${escapeHtml(normalizeStatus(path.confidence))}</span><strong>${path.names.map(escapeHtml).join(' → ')}</strong></article>`).join('');
     elements.relations.innerHTML = `
       <div class="impact-summary">
         <span class="risk risk-${escapeHtml(risk)}">Risque ${escapeHtml(riskLabels[risk] || report.risk)} · score ${report.score}</span>
@@ -408,11 +421,23 @@ async function showImpact(kind, elementId, elementName) {
         <span>${report.tests.length} test(s)</span>
       </div>
       <ul class="impact-reasons">${reasons}</ul>
+      ${paths ? `<h3>Chemins critiques</h3><div class="critical-paths">${paths}</div>` : ''}
       ${report.truncated ? '<p class="warning">Résultat limité pour préserver la lisibilité.</p>' : ''}
       ${nodes || '<p class="empty">Aucune dépendance dans la profondeur demandée.</p>'}`;
   } catch (error) {
     elements.relations.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   }
+}
+
+async function loadDiagnostics() {
+  if (!currentId) return;
+  elements.diagnostics.innerHTML = '<p class="empty">Chargement…</p>';
+  try {
+    const severity = elements.diagnosticSeverity.value ? `?severity=${encodeURIComponent(elements.diagnosticSeverity.value)}` : '';
+    const diagnostics = await api(`/api/analyses/${currentId}/diagnostics${severity}`);
+    elements.diagnostics.className = '';
+    elements.diagnostics.innerHTML = diagnostics.length ? diagnostics.map(item => `<article class="diagnostic diagnostic-${normalizeStatus(item.severity)}"><div><strong>${escapeHtml(item.code)}</strong><span>${escapeHtml(item.stage)}</span><span>${escapeHtml(item.severity)}</span></div><p>${escapeHtml(item.message)}</p>${item.filePath ? `<small>${escapeHtml(item.filePath)}${item.line ? `:${item.line}` : ''}</small>` : ''}</article>`).join('') : '<p class="empty">Aucun diagnostic pour ce filtre.</p>';
+  } catch (error) { elements.diagnostics.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
 }
 
 async function loadSqlObjects() {
@@ -640,7 +665,8 @@ async function compareAnalyses() {
     const result = await api(`/api/analyses/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     const commit = value => value ? escapeHtml(value.slice(0, 12)) : 'hors Git';
     const group = (title, values, css) => `<section><h3>${title} (${values.length})</h3>${values.length ? values.slice(0, 250).map(item => `<div class="change ${css}"><strong>${escapeHtml(item.kind)}</strong> ${escapeHtml(item.key)}${item.filePath ? `<small>${escapeHtml(item.filePath)}</small>` : ''}</div>`).join('') : '<p class="empty">Aucun.</p>'}</section>`;
-    elements.comparison.innerHTML = `<div class="comparison-summary"><span>${commit(result.fromCommit)} → ${commit(result.toCommit)}</span><strong>${result.unchangedFiles} fichier(s) inchangé(s)</strong></div><div class="change-grid">${group('Ajouts', result.added, 'added')}${group('Modifications', result.modified, 'modified')}${group('Suppressions', result.removed, 'removed')}</div>`;
+    const renames = (result.renamed || []).length ? `<section class="renames"><h3>Renommages (${result.renamed.length})</h3>${result.renamed.map(item => `<div class="change renamed"><strong>${escapeHtml(item.fromPath)}</strong> → ${escapeHtml(item.toPath)}</div>`).join('')}</section>` : '';
+    elements.comparison.innerHTML = `<div class="comparison-summary"><span>${commit(result.fromCommit)} → ${commit(result.toCommit)}</span><strong>${result.unchangedFiles} fichier(s) inchangé(s)</strong></div>${renames}<div class="change-grid">${group('Ajouts', result.added, 'added')}${group('Modifications', result.modified, 'modified')}${group('Suppressions', result.removed, 'removed')}</div>`;
   } catch (error) { elements.comparison.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
 }
 
@@ -672,6 +698,9 @@ function resetResults() {
   elements.dependencyGraph.hidden = true;
   elements.graphStatus.hidden = false;
   elements.graphStatus.textContent = 'Sélectionnez une analyse terminée.';
+  elements.diagnostics.className = 'empty';
+  elements.diagnostics.textContent = 'Sélectionnez une analyse terminée.';
+  currentImpact = null;
   elements.query.disabled = true;
   elements.search.disabled = true;
   elements.sqlQuery.disabled = true;
@@ -679,6 +708,7 @@ function resetResults() {
   elements.fileQuery.disabled = true;
   elements.fileCategory.disabled = true;
   elements.searchFiles.disabled = true;
+  elements.diagnosticSeverity.disabled = true;
   [elements.graphKind, elements.edgeFilter, elements.zoomOut, elements.zoomIn, elements.resetGraph, elements.exportGraph]
     .forEach(element => { element.disabled = true; });
   elements.viewDocumentation.disabled = true;

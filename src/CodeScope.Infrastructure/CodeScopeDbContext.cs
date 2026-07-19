@@ -21,6 +21,7 @@ public sealed class CodeScopeDbContext : DbContext
     public DbSet<SqlColumnReference> SqlColumnReferences => Set<SqlColumnReference>();
     public DbSet<CobolSymbol> CobolSymbols => Set<CobolSymbol>();
     public DbSet<CobolRelation> CobolRelations => Set<CobolRelation>();
+    public DbSet<AnalysisDiagnostic> AnalysisDiagnostics => Set<AnalysisDiagnostic>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -35,6 +36,7 @@ public sealed class CodeScopeDbContext : DbContext
         b.Entity<Analysis>().HasMany(x => x.SqlColumnReferences).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Analysis>().HasMany(x => x.CobolSymbols).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Analysis>().HasMany(x => x.CobolRelations).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Analysis>().HasMany(x => x.Diagnostics).WithOne().HasForeignKey(x => x.AnalysisId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.Symbols).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.References).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectInfo>().HasMany(x => x.Packages).WithOne().HasForeignKey(x => x.ProjectInfoId).OnDelete(DeleteBehavior.Cascade);
@@ -53,5 +55,6 @@ public sealed class CodeScopeDbContext : DbContext
         b.Entity<SqlColumnReference>().HasIndex(x => new { x.AnalysisId, x.SqlColumnId });
         b.Entity<CobolSymbol>().HasIndex(x => new { x.AnalysisId, x.Name });
         b.Entity<CobolRelation>().HasIndex(x => new { x.AnalysisId, x.SourceSymbolId });
+        b.Entity<AnalysisDiagnostic>().HasIndex(x => new { x.AnalysisId, x.Severity });
     }
 }

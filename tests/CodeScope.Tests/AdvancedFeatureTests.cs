@@ -19,8 +19,11 @@ public sealed class AdvancedFeatureTests
 
         Assert.NotNull(comparison);
         Assert.Contains(comparison!.Modified, item => item.Kind == "File" && item.Key == "shared.cs");
-        Assert.Contains(comparison.Added, item => item.Kind == "Symbol" && item.Key.Contains("new.cs"));
-        Assert.Contains(comparison.Removed, item => item.Kind == "Symbol" && item.Key.Contains("old.cs"));
+        var rename = Assert.Single(comparison.Renamed);
+        Assert.Equal("old.cs", rename.FromPath);
+        Assert.Equal("new.cs", rename.ToPath);
+        Assert.DoesNotContain(comparison.Added, item => item.Kind == "Symbol");
+        Assert.DoesNotContain(comparison.Removed, item => item.Kind == "Symbol");
         Assert.Equal("from-commit", comparison.FromCommit);
         Assert.Equal("to-commit", comparison.ToCommit);
     }
@@ -47,6 +50,7 @@ public sealed class AdvancedFeatureTests
         await repository.CompleteAsync(completed, default);
 
         var graph = await new DependencyGraphService(repository).BuildAsync(pending.Id, "types", 100, default);
+        var impact = await new ImpactAnalysisService(repository).AnalyzeAsync(pending.Id, ImpactElementKind.CodeSymbol, caller.Id, 3, default);
         var exports = new AnalysisExportService(repository);
         var pdf = await exports.GeneratePdfAsync(pending.Id, default);
         var sarif = await exports.GenerateSarifAsync(pending.Id, default);
@@ -54,6 +58,8 @@ public sealed class AdvancedFeatureTests
         Assert.NotNull(graph);
         Assert.Equal(2, graph!.Nodes.Count);
         Assert.Single(graph.Edges);
+        Assert.NotNull(impact);
+        Assert.Contains(impact!.CriticalPaths, path => path.Names.SequenceEqual(new[] { "Sample.Service.Run", "Sample.Repository.Save" }));
         Assert.NotNull(pdf);
         Assert.StartsWith("%PDF-1.4", System.Text.Encoding.ASCII.GetString(pdf!.Content, 0, 8));
         Assert.EndsWith("%%EOF\n", System.Text.Encoding.ASCII.GetString(pdf.Content));
@@ -79,7 +85,11 @@ public sealed class AdvancedFeatureTests
             RootPath = pending.RootPath,
             Status = AnalysisStatus.Completed,
             Projects = { new ProjectInfo { AnalysisId = pending.Id, Name = "Sample", Path = "C:\\sample\\Sample.csproj", Symbols = { symbol } } },
-            Files = { new SourceFileInfo { AnalysisId = pending.Id, RelativePath = "shared.cs", FullPath = "C:\\sample\\shared.cs", Extension = ".cs", Category = SourceFileCategory.SourceCode, Sha256 = hash } },
+            Files =
+            {
+                new SourceFileInfo { AnalysisId = pending.Id, RelativePath = "shared.cs", FullPath = "C:\\sample\\shared.cs", Extension = ".cs", Category = SourceFileCategory.SourceCode, Sha256 = hash },
+                new SourceFileInfo { AnalysisId = pending.Id, RelativePath = symbolFile, FullPath = $"C:\\sample\\{symbolFile}", Extension = ".cs", Category = SourceFileCategory.SourceCode, Sha256 = "stable-symbol" }
+            },
             RepositorySnapshots = { new RepositorySnapshot { AnalysisId = pending.Id, IsGitRepository = true, CommitHash = hash == "abc" ? "from-commit" : "to-commit" } }
         };
         await repository.CompleteAsync(completed, default);

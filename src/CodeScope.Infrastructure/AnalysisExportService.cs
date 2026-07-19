@@ -30,6 +30,7 @@ public sealed class AnalysisExportService : IAnalysisExportService
             $"Objets / colonnes SQL : {analysis.SqlObjects.Count} / {analysis.SqlColumns.Count}",
             $"Symboles / relations COBOL : {analysis.CobolSymbols.Count} / {analysis.CobolRelations.Count}",
             $"Endpoints : {analysis.Endpoints.Count}",
+            $"Diagnostics : {analysis.Diagnostics.Count}",
             "",
             "Projets"
         };
@@ -58,6 +59,8 @@ public sealed class AnalysisExportService : IAnalysisExportService
             results.Add(Result("CSCOPE002", "note", $"Reference SQL {reference.Confidence.ToString().ToLowerInvariant()} vers {reference.TargetDisplay}.", reference.FilePath, reference.Line));
         foreach (var relation in analysis.CobolRelations.Where(relation => !relation.TargetSymbolId.HasValue))
             results.Add(Result("CSCOPE003", "warning", $"Cible COBOL non resolue : {relation.TargetDisplay}.", relation.FilePath, relation.Line));
+        foreach (var diagnostic in analysis.Diagnostics.Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Info))
+            results.Add(Result("CSCOPE004", diagnostic.Severity == DiagnosticSeverity.Error ? "error" : "warning", $"{diagnostic.Code} : {diagnostic.Message}", diagnostic.FilePath ?? analysis.RootPath, diagnostic.Line ?? 1));
 
         var document = new
         {
@@ -82,7 +85,8 @@ public sealed class AnalysisExportService : IAnalysisExportService
     {
         new { id = "CSCOPE001", name = "HighComplexity", shortDescription = new { text = "Methode trop complexe" } },
         new { id = "CSCOPE002", name = "UncertainSql", shortDescription = new { text = "Reference SQL incertaine" } },
-        new { id = "CSCOPE003", name = "UnresolvedCobol", shortDescription = new { text = "Dependance COBOL non resolue" } }
+        new { id = "CSCOPE003", name = "UnresolvedCobol", shortDescription = new { text = "Dependance COBOL non resolue" } },
+        new { id = "CSCOPE004", name = "AnalysisDiagnostic", shortDescription = new { text = "Diagnostic du moteur d'analyse" } }
     };
 
     private static string Display(CodeSymbol symbol) => string.IsNullOrWhiteSpace(symbol.Container) ? symbol.Name : $"{symbol.Container}.{symbol.Name}";

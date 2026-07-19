@@ -22,6 +22,7 @@ public sealed class ProjectScanner : IProjectScanner
         if (!Directory.Exists(fullRoot)) throw new DirectoryNotFoundException("Le dossier indiqué n'existe pas.");
 
         Analysis? semanticResult = null;
+        string? fallbackReason = null;
         try
         {
             semanticResult = await SemanticSolutionScanner.TryScanAsync(
@@ -37,6 +38,7 @@ public sealed class ProjectScanner : IProjectScanner
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
             InvalidOperationException or NotSupportedException or AggregateException)
         {
+            fallbackReason = exception.GetType().Name;
             progress?.Report(new AnalysisProgress(
                 "fallback",
                 $"Chargement sémantique indisponible ({exception.GetType().Name}) ; analyse syntaxique de secours.",
@@ -57,6 +59,8 @@ public sealed class ProjectScanner : IProjectScanner
         }
 
         var analysis = new Analysis { Id = analysisId, RootPath = fullRoot, Status = AnalysisStatus.Running };
+        if (fallbackReason is not null)
+            DiagnosticReporter.Warning(analysis, "CSCOPE101", "semantic", $"Analyse sémantique indisponible ({fallbackReason}) ; le mode syntaxique a été utilisé.");
         var filesProcessed = 0;
         var symbolsFound = 0;
         var warnings = 0;
@@ -85,6 +89,7 @@ public sealed class ProjectScanner : IProjectScanner
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or XmlException)
             {
                 warnings++;
+                DiagnosticReporter.Warning(analysis, "CSCOPE102", "projects", "Le fichier projet n'a pas pu être lu.", projectPath);
                 continue;
             }
 
@@ -101,6 +106,7 @@ public sealed class ProjectScanner : IProjectScanner
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
                     warnings++;
+                    DiagnosticReporter.Warning(analysis, "CSCOPE103", "symbols", "Le fichier source n'a pas pu être lu.", file);
                 }
 
                 filesProcessed++;

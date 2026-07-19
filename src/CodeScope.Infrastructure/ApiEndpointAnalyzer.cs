@@ -56,6 +56,7 @@ internal static class ApiEndpointAnalyzer
             try { text = await File.ReadAllTextAsync(file.Path, cancellationToken); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                DiagnosticReporter.Warning(analysis, "CSCOPE104", "endpoints", "Le fichier n'a pas pu être inspecté pour les endpoints.", file.Path);
                 continue;
             }
 

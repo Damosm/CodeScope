@@ -51,6 +51,10 @@ public sealed class AnalysisRepositoryTests
                     FilePath = "Service.cs",
                     Line = 3
                 }
+            },
+            Diagnostics =
+            {
+                new AnalysisDiagnostic { AnalysisId = pending.Id, Code = "CSCOPE999", Stage = "test", Message = "Diagnostic de test." }
             }
         };
 
@@ -61,6 +65,8 @@ public sealed class AnalysisRepositoryTests
         Assert.Single(saved.Projects);
         Assert.Single(saved.Projects[0].Symbols);
         Assert.Single(saved.Relations);
+        Assert.Single(saved.Diagnostics);
+        Assert.Single(await repository.GetDiagnosticsAsync(pending.Id, DiagnosticSeverity.Warning, default));
         Assert.Single(await repository.GetRelationsAsync(pending.Id, serviceSymbol.Id, default));
 
         await repository.DeleteAsync(pending.Id, default);

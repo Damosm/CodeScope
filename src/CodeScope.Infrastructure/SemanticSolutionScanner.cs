@@ -37,9 +37,10 @@ internal static class SemanticSolutionScanner
             warnings));
 
         MSBuildRegistration.EnsureRegistered();
+        var workspaceIssues = 0;
         using var workspace = MSBuildWorkspace.Create();
         workspace.LoadMetadataForReferencedProjects = true;
-        workspace.WorkspaceFailed += (_, _) => Interlocked.Increment(ref warnings);
+        workspace.WorkspaceFailed += (_, _) => { Interlocked.Increment(ref warnings); Interlocked.Increment(ref workspaceIssues); };
 
         var solution = await workspace.OpenSolutionAsync(
             solutionPath,
@@ -57,11 +58,15 @@ internal static class SemanticSolutionScanner
             RootPath = rootPath,
             Status = AnalysisStatus.Running
         };
+        if (solutionPaths.Count > 1)
+            DiagnosticReporter.Info(analysis, "CSCOPE105", "semantic", $"Plusieurs solutions ont été détectées ; {Path.GetFileName(solutionPath)} a été sélectionnée.", solutionPath);
+        if (workspaceIssues > 0)
+            DiagnosticReporter.Warning(analysis, "CSCOPE106", "semantic", $"MSBuild a signalé {workspaceIssues} problème(s) pendant le chargement de la solution.", solutionPath);
         var projectMap = new Dictionary<ProjectId, ProjectInfo>();
         foreach (var roslynProject in roslynProjects)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var project = CreateProject(analysisId, roslynProject, ref warnings);
+            var project = CreateProject(analysis, roslynProject, ref warnings);
             analysis.Projects.Add(project);
             projectMap[roslynProject.Id] = project;
         }
@@ -100,6 +105,7 @@ internal static class SemanticSolutionScanner
             if (root is null || model is null)
             {
                 warnings++;
+                DiagnosticReporter.Warning(analysis, "CSCOPE107", "semantic", "Roslyn n'a pas pu produire le modèle sémantique du fichier.", context.Document.FilePath);
                 continue;
             }
 
@@ -314,11 +320,11 @@ internal static class SemanticSolutionScanner
         });
     }
 
-    private static ProjectInfo CreateProject(Guid analysisId, Microsoft.CodeAnalysis.Project project, ref int warnings)
+    private static ProjectInfo CreateProject(Analysis analysis, Microsoft.CodeAnalysis.Project project, ref int warnings)
     {
         var result = new ProjectInfo
         {
-            AnalysisId = analysisId,
+            AnalysisId = analysis.Id,
             Name = project.Name,
             Path = Path.GetFullPath(project.FilePath!)
         };
@@ -333,6 +339,7 @@ internal static class SemanticSolutionScanner
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or XmlException)
         {
             warnings++;
+            DiagnosticReporter.Warning(analysis, "CSCOPE108", "projects", "Les métadonnées du projet n'ont pas pu être lues.", result.Path);
         }
 
         return result;

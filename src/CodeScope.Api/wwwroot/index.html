@@ -108,7 +108,11 @@
           <span class="eyebrow">Dépendances directes et indirectes</span>
           <h2 id="relationsTitle">Analyse d'impact</h2>
         </div>
-        <button id="closeRelations" type="button" class="subtle">Fermer</button>
+        <div class="row compact">
+          <label class="inline-label" for="impactDepth">Profondeur</label>
+          <select id="impactDepth"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+          <button id="closeRelations" type="button" class="subtle">Fermer</button>
+        </div>
       </div>
       <div id="relations"></div>
     </section>
@@ -142,6 +146,14 @@
         <button id="compare" type="button" disabled>Comparer</button>
       </div>
       <div id="comparison" class="empty">Deux analyses terminées sont nécessaires.</div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><span class="eyebrow">Qualité de l'analyse</span><h2>Diagnostics</h2></div>
+        <select id="diagnosticSeverity" disabled><option value="">Tous niveaux</option><option>Warning</option><option>Error</option><option>Info</option></select>
+      </div>
+      <div id="diagnostics" class="empty">Sélectionnez une analyse terminée.</div>
     </section>
 
     <section class="card documentation-card">

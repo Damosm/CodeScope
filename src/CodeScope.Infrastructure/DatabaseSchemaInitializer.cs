@@ -177,5 +177,16 @@ public static class DatabaseSchemaInitializer
             );", cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS \"IX_CobolRelations_AnalysisId_SourceSymbolId\" ON \"CobolRelations\" (\"AnalysisId\", \"SourceSymbolId\");", cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            @"CREATE TABLE IF NOT EXISTS ""AnalysisDiagnostics"" (
+                ""Id"" TEXT NOT NULL CONSTRAINT ""PK_AnalysisDiagnostics"" PRIMARY KEY,
+                ""AnalysisId"" TEXT NOT NULL, ""Severity"" INTEGER NOT NULL,
+                ""Code"" TEXT NOT NULL, ""Stage"" TEXT NOT NULL, ""Message"" TEXT NOT NULL,
+                ""FilePath"" TEXT NULL, ""Line"" INTEGER NULL,
+                CONSTRAINT ""FK_AnalysisDiagnostics_Analyses_AnalysisId"" FOREIGN KEY (""AnalysisId"") REFERENCES ""Analyses"" (""Id"") ON DELETE CASCADE
+            );", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_AnalysisDiagnostics_AnalysisId_Severity\" ON \"AnalysisDiagnostics\" (\"AnalysisId\", \"Severity\");", cancellationToken);
     }
 }

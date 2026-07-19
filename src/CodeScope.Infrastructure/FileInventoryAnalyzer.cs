@@ -50,6 +50,7 @@ internal static class FileInventoryAnalyzer
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 warnings++;
+                DiagnosticReporter.Warning(analysis, "CSCOPE401", "inventory", "Les métadonnées ou l'empreinte du fichier n'ont pas pu être calculées.", path);
             }
 
             if ((index + 1) % 50 == 0 || index + 1 == paths.Count)
@@ -64,6 +65,8 @@ internal static class FileInventoryAnalyzer
         }
 
         analysis.RepositorySnapshots.Add(await CaptureGitAsync(analysis.Id, rootPath, cancellationToken));
+        if (!analysis.RepositorySnapshots[0].IsGitRepository)
+            DiagnosticReporter.Info(analysis, "CSCOPE402", "git", "Aucun dépôt Git n'a été détecté pour ce périmètre.");
     }
 
     private static bool IsInside(string path, string directory)

@@ -11,6 +11,7 @@ public enum ImpactRisk { Low, Medium, High, Critical }
 public enum SourceFileCategory { SourceCode, Configuration, Sql, Cobol, Project, Solution, Documentation, Other }
 public enum CobolSymbolKind { Program, Section, Paragraph, Copybook }
 public enum CobolRelationKind { Calls, Copies }
+public enum DiagnosticSeverity { Info, Warning, Error }
 
 public sealed class Analysis
 {
@@ -31,6 +32,7 @@ public sealed class Analysis
     public List<SqlColumnReference> SqlColumnReferences { get; set; } = new();
     public List<CobolSymbol> CobolSymbols { get; set; } = new();
     public List<CobolRelation> CobolRelations { get; set; } = new();
+    public List<AnalysisDiagnostic> Diagnostics { get; set; } = new();
 }
 
 public sealed class ProjectInfo
@@ -204,4 +206,16 @@ public sealed class CobolRelation
     public RelationConfidence Confidence { get; set; }
     public string FilePath { get; set; } = "";
     public int Line { get; set; }
+}
+
+public sealed class AnalysisDiagnostic
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public DiagnosticSeverity Severity { get; set; } = DiagnosticSeverity.Warning;
+    public string Code { get; set; } = "CSCOPE000";
+    public string Stage { get; set; } = "analysis";
+    public string Message { get; set; } = "";
+    public string? FilePath { get; set; }
+    public int? Line { get; set; }
 }

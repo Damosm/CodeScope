@@ -27,7 +27,7 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
 
         var visited = new Dictionary<string, VisitedNode>(StringComparer.Ordinal)
         {
-            [rootKey] = new VisitedNode(0, RelationConfidence.Certain, "élément sélectionné")
+            [rootKey] = new VisitedNode(0, RelationConfidence.Certain, "élément sélectionné", null)
         };
         var queue = new Queue<string>();
         queue.Enqueue(rootKey);
@@ -65,7 +65,7 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
                     continue;
                 }
 
-                visited[edge.TargetKey] = new VisitedNode(nextDepth, confidence, edge.Relationship);
+                visited[edge.TargetKey] = new VisitedNode(nextDepth, confidence, edge.Relationship, currentKey);
                 queue.Enqueue(edge.TargetKey);
             }
         }
@@ -125,6 +125,7 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
             _ => ImpactRisk.Critical
         };
         var reasons = BuildReasons(direct, indirect, projects.Count, tests.Count, uncertain, destructiveSql, truncated);
+        var criticalPaths = BuildCriticalPaths(rootKey, visited, graph);
 
         return new ImpactReport(
             root,
@@ -136,6 +137,7 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
             risk,
             score,
             reasons,
+            criticalPaths,
             maxDepth,
             truncated);
     }
@@ -284,6 +286,38 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
         return reasons;
     }
 
+    private static IReadOnlyList<ImpactPath> BuildCriticalPaths(
+        string rootKey,
+        IReadOnlyDictionary<string, VisitedNode> visited,
+        Graph graph)
+    {
+        var leaves = visited
+            .Where(pair => pair.Key != rootKey)
+            .Where(pair => !graph.Adjacency.TryGetValue(pair.Key, out var edges) ||
+                !edges.Any(edge => visited.TryGetValue(edge.TargetKey, out var target) && target.Depth == pair.Value.Depth + 1))
+            .OrderByDescending(pair => pair.Value.Depth)
+            .ThenBy(pair => graph.Nodes[pair.Key].Name)
+            .Take(10);
+        var paths = new List<ImpactPath>();
+        foreach (var leaf in leaves)
+        {
+            var keys = new List<string>();
+            string? current = leaf.Key;
+            while (current is not null && visited.TryGetValue(current, out var item))
+            {
+                keys.Add(current);
+                current = item.ParentKey;
+            }
+            keys.Reverse();
+            paths.Add(new ImpactPath(
+                keys,
+                keys.Select(key => graph.Nodes[key].Name).ToList(),
+                leaf.Value.Depth,
+                leaf.Value.Confidence));
+        }
+        return paths;
+    }
+
     private static bool IsTest(ImpactNode node, IReadOnlyDictionary<Guid, string> projects)
     {
         if (node.FilePath?.Contains("test", StringComparison.OrdinalIgnoreCase) == true) return true;
@@ -343,5 +377,5 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
 
     private sealed record NodeDefinition(Guid? Id, ImpactElementKind Kind, string Name, string? FilePath);
     private sealed record GraphEdge(string SourceKey, string TargetKey, string Relationship, RelationConfidence Confidence);
-    private sealed record VisitedNode(int Depth, RelationConfidence Confidence, string Relationship);
+    private sealed record VisitedNode(int Depth, RelationConfidence Confidence, string Relationship, string? ParentKey);
 }

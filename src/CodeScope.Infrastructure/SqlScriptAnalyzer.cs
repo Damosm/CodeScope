@@ -79,6 +79,7 @@ internal static class SqlScriptAnalyzer
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 warnings++;
+                DiagnosticReporter.Warning(analysis, "CSCOPE201", "sql", "Le script SQL n'a pas pu être lu.", path);
             }
 
             progress?.Report(new AnalysisProgress(
@@ -173,6 +174,7 @@ internal static class SqlScriptAnalyzer
             try { sourceText = await File.ReadAllTextAsync(fileGroup.Key, cancellationToken); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                DiagnosticReporter.Warning(analysis, "CSCOPE202", "sql", "Le fichier C# n'a pas pu être inspecté pour le SQL dynamique.", fileGroup.Key);
                 continue;
             }
 

@@ -26,6 +26,7 @@ public sealed class ProjectScannerTests
             Assert.Contains(progressValues, x => x.Stage == "completed" && x.SymbolsFound >= 4);
             Assert.Contains(result.Projects[0].Symbols, x => x.Kind == SymbolKind.Namespace && x.Name == "Demo");
             Assert.Contains(result.Files, file => file.RelativePath == "Service.cs" && file.Sha256.Length == 64 && file.LineCount == 1);
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "CSCOPE402" && diagnostic.Severity == DiagnosticSeverity.Info);
         }
         finally { Directory.Delete(root, true); }
     }

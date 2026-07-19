@@ -30,6 +30,7 @@ public interface IAnalysisRepository
     Task<IReadOnlyList<SqlColumnReference>> GetSqlColumnReferencesAsync(Guid analysisId, Guid? columnId, CancellationToken cancellationToken);
     Task<IReadOnlyList<CobolSymbol>> SearchCobolAsync(Guid analysisId, string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<CobolRelation>> GetCobolRelationsAsync(Guid analysisId, Guid? symbolId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AnalysisDiagnostic>> GetDiagnosticsAsync(Guid analysisId, DiagnosticSeverity? severity, CancellationToken cancellationToken);
 }
 
 public interface IAnalysisJobQueue
@@ -116,7 +117,8 @@ public sealed record Dashboard(
     int Packages,
     int Properties = 0,
     int SqlColumns = 0,
-    int CobolSymbols = 0);
+    int CobolSymbols = 0,
+    int Diagnostics = 0);
 
 public sealed record ImpactNode(
     string Key,
@@ -144,8 +146,15 @@ public sealed record ImpactReport(
     ImpactRisk Risk,
     int Score,
     IReadOnlyList<string> Reasons,
+    IReadOnlyList<ImpactPath> CriticalPaths,
     int MaxDepth,
     bool Truncated);
+
+public sealed record ImpactPath(
+    IReadOnlyList<string> NodeKeys,
+    IReadOnlyList<string> Names,
+    int Depth,
+    RelationConfidence Confidence);
 
 public sealed record GeneratedDocumentation(string FileName, string Html);
 public sealed record GeneratedFile(string FileName, string ContentType, byte[] Content);
@@ -155,6 +164,7 @@ public sealed record GraphEdge(string Source, string Target, string Kind, Relati
 public sealed record GraphData(string Kind, IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges, bool Truncated);
 
 public sealed record ComparisonItem(string Key, string Kind, string? FilePath, string Change);
+public sealed record ComparisonRename(string FromPath, string ToPath, string Sha256);
 public sealed record AnalysisComparison(
     Guid FromAnalysisId,
     Guid ToAnalysisId,
@@ -163,4 +173,5 @@ public sealed record AnalysisComparison(
     IReadOnlyList<ComparisonItem> Added,
     IReadOnlyList<ComparisonItem> Removed,
     IReadOnlyList<ComparisonItem> Modified,
+    IReadOnlyList<ComparisonRename> Renamed,
     int UnchangedFiles);

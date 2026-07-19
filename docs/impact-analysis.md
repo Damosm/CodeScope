@@ -2,7 +2,9 @@
 
 L'impact est calculé à la demande sur un graphe unifié. Les symboles C# sont reliés par appels, héritages, implémentations et instanciations. Les objets SQL sont reliés par lecture, écriture, jointure et exécution ; les chaînes C# peuvent relier un symbole à un objet SQL avec une confiance textuelle.
 
-Le parcours explore les relations dans les deux sens : dépendances utilisées par l'élément et éléments qui en dépendent. La profondeur API est bornée de 1 à 4 et le résultat à 250 nœuds. L'interface utilise actuellement une profondeur de 2. La confiance d'un chemin est celle de son maillon le plus faible : `Certain`, puis `Probable`, puis `Textual`.
+Le parcours explore les relations dans les deux sens : dépendances utilisées par l'élément et éléments qui en dépendent. La profondeur est réglable de 1 à 4 dans l'interface et le résultat est borné à 250 nœuds. La confiance d'un chemin est celle de son maillon le plus faible : `Certain`, puis `Probable`, puis `Textual`.
+
+Les chemins critiques sont les chemins les plus profonds atteignant une feuille du sous-graphe visité. CodeScope en restitue au plus dix, triés par profondeur puis par nom. Ils servent à repérer rapidement les chaînes de dépendances longues ; il ne s'agit pas d'un calcul de durée d'exécution.
 
 ## Score de risque
 

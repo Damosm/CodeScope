@@ -53,6 +53,7 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
         Metric(html, "Objets SQL", analysis.SqlObjects.Count);
         Metric(html, "Colonnes SQL", analysis.SqlColumns.Count);
         Metric(html, "Symboles COBOL", analysis.CobolSymbols.Count);
+        Metric(html, "Diagnostics", analysis.Diagnostics.Count);
         Metric(html, "Relations", analysis.Relations.Count + analysis.SqlReferences.Count);
         html.Append("</div>");
 
@@ -111,6 +112,13 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
         html.Append("<h2>Packages NuGet</h2>");
         if (packages.Count == 0) html.Append("<p class=\"muted\">Aucun PackageReference explicite.</p>");
         else html.Append("<ul>").Append(string.Join("", packages.Select(package => $"<li>{E(PackageDisplay(package))}</li>"))).Append("</ul>");
+
+        html.Append("<h2>Diagnostics d'analyse</h2>");
+        if (analysis.Diagnostics.Count == 0) html.Append("<p class=\"muted\">Aucun diagnostic.</p>");
+        else html.Append("<table><thead><tr><th>Niveau</th><th>Code</th><th>Étape</th><th>Message</th><th>Emplacement</th></tr></thead><tbody>")
+            .Append(string.Join("", analysis.Diagnostics.OrderByDescending(item => item.Severity).ThenBy(item => item.Code).Select(item =>
+                $"<tr><td>{E(item.Severity.ToString())}</td><td>{E(item.Code)}</td><td>{E(item.Stage)}</td><td>{E(item.Message)}</td><td><code>{E(item.FilePath ?? "-")}{(item.Line.HasValue ? $":" + item.Line.Value : "")}</code></td></tr>")))
+            .Append("</tbody></table>");
 
         html.Append("<h2>Zones complexes et points de vigilance</h2>");
         var complexMethods = methods.OrderByDescending(method => method.Complexity).ThenByDescending(method => method.LineCount).Take(20).ToList();

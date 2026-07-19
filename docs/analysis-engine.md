@@ -29,3 +29,7 @@ Les extensions `.cbl`, `.cob` et `.cpy` sont reconnues. Le scanner relève `PROG
 La comparaison aligne les chemins relatifs et leurs SHA-256 : un même chemin avec un hash différent est modifié, un chemin présent d'un seul côté est ajouté ou supprimé, sinon il est inchangé. Les symboles, endpoints, objets SQL et symboles COBOL sont comparés par clés stables. Les commits Git capturés contextualisent le résultat. Cette optimisation identifie le delta ; le scanner sémantique reste complet à chaque lancement.
 
 La progression publiée comprend l'étape, les projets terminés, les fichiers traités, les symboles détectés et les avertissements. L'annulation est vérifiée entre les projets et chaque fichier.
+
+## Diagnostics persistants
+
+Les problèmes non bloquants sont enregistrés sous forme de diagnostics avec niveau, code stable, étape, message sûr et emplacement éventuel. Les messages ne contiennent ni source ni texte d'exception arbitraire. La métrique « Diagnostics » compte toutes les entrées ; l'interface peut filtrer `Info`, `Warning` et `Error`. Les avertissements sont également inclus dans l'export SARIF sous la règle `CSCOPE004`.

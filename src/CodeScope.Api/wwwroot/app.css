@@ -85,6 +85,8 @@ button.subtle:hover { background: #edf8f7; }
 .muted { color: #64748b; }
 .compact { align-items: center; flex-wrap: wrap; }
 .compact input { min-width: 210px; }
+.inline-label { margin: 0; white-space: nowrap; }
+.compact select { flex: 0 0 auto; min-width: 72px; padding: 8px; }
 .explorer-layout { display: grid; grid-template-columns: minmax(280px, 42%) 1fr; gap: 18px; min-height: 360px; }
 .file-tree, .file-properties { border: 1px solid #dce4ec; border-radius: 9px; padding: 12px; max-height: 560px; overflow: auto; }
 .file-tree details { margin-left: 5px; }
@@ -125,7 +127,20 @@ th { background: #edf8f7; }
 .change.added { border-color: #2f9a62; background: #f0fbf5; }
 .change.modified { border-color: #d08335; background: #fff8ec; }
 .change.removed { border-color: #c75050; background: #fff4f4; }
+.renames { margin: 14px 0; }
+.change.renamed { border-color: #6750a4; background: #f7f4ff; }
 .cobol-summary { color: #536273; margin-bottom: 8px; }
+.critical-path { display: grid; gap: 4px; border-left: 3px solid #6750a4; background: #f7f4ff; padding: 10px 12px; margin: 8px 0; }
+.critical-path span { color: #64748b; font-size: 12px; }
+.critical-path strong { overflow-wrap: anywhere; }
+.diagnostic { border: 1px solid #dce4ec; border-left-width: 4px; border-radius: 7px; padding: 11px 13px; margin: 9px 0; }
+.diagnostic > div { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.diagnostic > div span { color: #64748b; font-size: 13px; }
+.diagnostic p { margin: 7px 0; }
+.diagnostic small { color: #64748b; overflow-wrap: anywhere; }
+.diagnostic-warning { border-left-color: #d08335; background: #fffaf2; }
+.diagnostic-error { border-left-color: #c75050; background: #fff5f5; }
+.diagnostic-info { border-left-color: #4b83b6; background: #f4f9ff; }
 
 @media (max-width: 760px) {
   main { padding: 20px; }

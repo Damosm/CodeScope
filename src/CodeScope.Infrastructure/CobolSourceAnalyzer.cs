@@ -26,7 +26,12 @@ internal static class CobolSourceAnalyzer
             cancellationToken.ThrowIfCancellationRequested();
             string text;
             try { text = await File.ReadAllTextAsync(path, cancellationToken); }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { warnings++; continue; }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                warnings++;
+                DiagnosticReporter.Warning(analysis, "CSCOPE301", "cobol", "Le fichier COBOL n'a pas pu être lu.", path);
+                continue;
+            }
             CobolSymbol? currentProgram = null;
             foreach (Match match in Program.Matches(text))
             {

@@ -30,6 +30,7 @@ public sealed class AnalysisRepository : IAnalysisRepository
             .Include(x => x.SqlColumnReferences)
             .Include(x => x.CobolSymbols)
             .Include(x => x.CobolRelations)
+            .Include(x => x.Diagnostics)
             .SingleAsync(x => x.Id == result.Id, ct);
 
         if (analysis.Projects.Count > 0)
@@ -48,6 +49,7 @@ public sealed class AnalysisRepository : IAnalysisRepository
         if (analysis.SqlColumnReferences.Count > 0) _db.SqlColumnReferences.RemoveRange(analysis.SqlColumnReferences);
         if (analysis.CobolSymbols.Count > 0) _db.CobolSymbols.RemoveRange(analysis.CobolSymbols);
         if (analysis.CobolRelations.Count > 0) _db.CobolRelations.RemoveRange(analysis.CobolRelations);
+        if (analysis.Diagnostics.Count > 0) _db.AnalysisDiagnostics.RemoveRange(analysis.Diagnostics);
 
         analysis.Status = AnalysisStatus.Completed;
         analysis.CompletedAt = result.CompletedAt ?? DateTimeOffset.UtcNow;
@@ -89,6 +91,7 @@ public sealed class AnalysisRepository : IAnalysisRepository
         foreach (var reference in result.SqlColumnReferences) { reference.AnalysisId = analysis.Id; _db.SqlColumnReferences.Add(reference); }
         foreach (var symbol in result.CobolSymbols) { symbol.AnalysisId = analysis.Id; _db.CobolSymbols.Add(symbol); }
         foreach (var relation in result.CobolRelations) { relation.AnalysisId = analysis.Id; _db.CobolRelations.Add(relation); }
+        foreach (var diagnostic in result.Diagnostics) { diagnostic.AnalysisId = analysis.Id; _db.AnalysisDiagnostics.Add(diagnostic); }
 
         await _db.SaveChangesAsync(ct);
     }
@@ -130,6 +133,7 @@ public sealed class AnalysisRepository : IAnalysisRepository
         .Include(x => x.SqlColumnReferences)
         .Include(x => x.CobolSymbols)
         .Include(x => x.CobolRelations)
+        .Include(x => x.Diagnostics)
         .SingleOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<AnalysisStatus?> GetStatusAsync(Guid id, CancellationToken ct) =>
@@ -210,4 +214,10 @@ public sealed class AnalysisRepository : IAnalysisRepository
         await _db.CobolRelations.AsNoTracking()
             .Where(x => x.AnalysisId == id && (!symbolId.HasValue || x.SourceSymbolId == symbolId || x.TargetSymbolId == symbolId))
             .OrderBy(x => x.SourceDisplay).ThenBy(x => x.TargetDisplay).Take(1000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<AnalysisDiagnostic>> GetDiagnosticsAsync(Guid id, DiagnosticSeverity? severity, CancellationToken ct) =>
+        await _db.AnalysisDiagnostics.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!severity.HasValue || x.Severity == severity))
+            .OrderByDescending(x => x.Severity).ThenBy(x => x.Stage).ThenBy(x => x.FilePath).ThenBy(x => x.Line)
+            .Take(2000).ToListAsync(ct);
 }

@@ -54,5 +54,6 @@ public sealed class DatabaseSchemaInitializerTests
         Assert.Contains("SqlColumnReferences", tableNames);
         Assert.Contains("CobolSymbols", tableNames);
         Assert.Contains("CobolRelations", tableNames);
+        Assert.Contains("AnalysisDiagnostics", tableNames);
     }
 }

@@ -17,18 +17,33 @@ public sealed class AnalysisComparisonService : IAnalysisComparisonService
         var added = new List<ComparisonItem>();
         var removed = new List<ComparisonItem>();
         var modified = new List<ComparisonItem>();
+        var renamed = new List<ComparisonRename>();
         var fromFiles = from.Files.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase);
         var toFiles = to.Files.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase);
         var unchanged = 0;
-        foreach (var file in toFiles.Values)
+        foreach (var file in toFiles.Values.Where(file => fromFiles.ContainsKey(file.RelativePath)))
         {
-            if (!fromFiles.TryGetValue(file.RelativePath, out var previous))
-                added.Add(new ComparisonItem(file.RelativePath, "File", file.RelativePath, "Added"));
-            else if (!string.Equals(previous.Sha256, file.Sha256, StringComparison.Ordinal))
+            var previous = fromFiles[file.RelativePath];
+            if (!string.Equals(previous.Sha256, file.Sha256, StringComparison.Ordinal))
                 modified.Add(new ComparisonItem(file.RelativePath, "File", file.RelativePath, "Modified"));
             else unchanged++;
         }
-        foreach (var file in fromFiles.Values.Where(file => !toFiles.ContainsKey(file.RelativePath)))
+        var addedFiles = toFiles.Values.Where(file => !fromFiles.ContainsKey(file.RelativePath)).ToList();
+        var removedFiles = fromFiles.Values.Where(file => !toFiles.ContainsKey(file.RelativePath)).ToList();
+        var matchedRemoved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in addedFiles)
+        {
+            var previous = removedFiles.FirstOrDefault(candidate => !matchedRemoved.Contains(candidate.RelativePath) &&
+                candidate.Sha256.Length > 0 && string.Equals(candidate.Sha256, file.Sha256, StringComparison.Ordinal));
+            if (previous is null)
+                added.Add(new ComparisonItem(file.RelativePath, "File", file.RelativePath, "Added"));
+            else
+            {
+                matchedRemoved.Add(previous.RelativePath);
+                renamed.Add(new ComparisonRename(previous.RelativePath, file.RelativePath, file.Sha256));
+            }
+        }
+        foreach (var file in removedFiles.Where(file => !matchedRemoved.Contains(file.RelativePath)))
             removed.Add(new ComparisonItem(file.RelativePath, "File", file.RelativePath, "Removed"));
 
         CompareSet(SymbolKeys(from), SymbolKeys(to), "Symbol", added, removed);
@@ -45,12 +60,13 @@ public sealed class AnalysisComparisonService : IAnalysisComparisonService
             added.OrderBy(item => item.Kind).ThenBy(item => item.Key).ToList(),
             removed.OrderBy(item => item.Kind).ThenBy(item => item.Key).ToList(),
             modified.OrderBy(item => item.Key).ToList(),
+            renamed.OrderBy(item => item.FromPath).ToList(),
             unchanged);
     }
 
     private static Dictionary<string, string> SymbolKeys(Analysis analysis) => analysis.Projects
         .SelectMany(project => project.Symbols)
-        .GroupBy(symbol => $"{symbol.Kind}:{symbol.Container}:{symbol.Name}:{Relative(analysis.RootPath, symbol.FilePath)}", StringComparer.OrdinalIgnoreCase)
+        .GroupBy(symbol => $"{symbol.Kind}:{symbol.Container}:{symbol.Name}", StringComparer.OrdinalIgnoreCase)
         .ToDictionary(group => group.Key, group => Relative(analysis.RootPath, group.First().FilePath), StringComparer.OrdinalIgnoreCase);
 
     private static string Relative(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
