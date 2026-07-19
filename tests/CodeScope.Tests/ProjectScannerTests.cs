@@ -170,6 +170,66 @@ END;");
     }
 
     [Fact]
+    public async Task Scan_resolves_qualified_columns_to_the_correct_sql_alias()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "codescope-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "aliases.sql"), @"CREATE TABLE dbo.Customers (Id int NOT NULL, Name nvarchar(100) NULL);
+CREATE TABLE dbo.Orders (Id int NOT NULL, CustomerId int NOT NULL);
+CREATE VIEW dbo.OrderCustomers AS
+SELECT o.Id, c.Name
+FROM dbo.Orders AS o
+JOIN dbo.Customers c ON c.Id = o.CustomerId;");
+
+            var result = await new ProjectScanner().ScanAsync(Guid.NewGuid(), root, null, default);
+            var customers = Assert.Single(result.SqlObjects.Where(item => item.Name == "dbo.Customers"));
+            var orders = Assert.Single(result.SqlObjects.Where(item => item.Name == "dbo.Orders"));
+
+            Assert.Contains(result.SqlColumnReferences, item => item.SqlObjectId == orders.Id && item.ColumnName == "Id" && item.Operation == SqlOperationKind.Select);
+            Assert.Contains(result.SqlColumnReferences, item => item.SqlObjectId == customers.Id && item.ColumnName == "Name" && item.Operation == SqlOperationKind.Select);
+            Assert.DoesNotContain(result.SqlColumnReferences, item => item.SqlObjectId == customers.Id && item.ColumnName == "Id" && item.Operation == SqlOperationKind.Select);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task Scan_links_ef_core_fluent_and_attribute_mappings_to_sql()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "codescope-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net6.0</TargetFramework></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(Path.Combine(root, "Models.cs"), @"[Table(""customers"", Schema = ""dbo"")]
+public class Customer {
+    [Column(""customer_id"")] public int Id { get; set; }
+    public string Name { get; set; }
+}
+public class CustomerConfiguration : IEntityTypeConfiguration<Customer> {
+    public void Configure(EntityTypeBuilder<Customer> builder) {
+        builder.ToTable(""customers"", ""dbo"");
+        builder.Property(x => x.Name).HasColumnName(""customer_name"");
+    }
+}
+public class StoreContext { public DbSet<Customer> Customers { get; set; } }");
+            await File.WriteAllTextAsync(Path.Combine(root, "database.sql"), "CREATE TABLE dbo.customers (customer_id int NOT NULL, customer_name nvarchar(100) NULL);");
+
+            var result = await new ProjectScanner().ScanAsync(Guid.NewGuid(), root, null, default);
+            var mapping = Assert.Single(result.OrmEntityMappings);
+            Assert.Equal("Customer", mapping.EntityName);
+            Assert.Equal("dbo.customers", mapping.TableName);
+            Assert.Equal(OrmMappingSource.FluentApi, mapping.Source);
+            Assert.Equal(RelationConfidence.Certain, mapping.Confidence);
+            Assert.Collection(result.OrmPropertyMappings.Where(item => item.OrmEntityMappingId == mapping.Id).OrderBy(item => item.PropertyName),
+                id => { Assert.Equal("Id", id.PropertyName); Assert.Equal("customer_id", id.ColumnName); Assert.Equal(OrmMappingSource.PropertyAttribute, id.Source); },
+                name => { Assert.Equal("Name", name.PropertyName); Assert.Equal("customer_name", name.ColumnName); Assert.Equal(OrmMappingSource.FluentApi, name.Source); });
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Scan_extracts_packages_controller_routes_and_minimal_api_endpoints()
     {
         var root = Path.Combine(Path.GetTempPath(), "codescope-tests", Guid.NewGuid().ToString("N"));

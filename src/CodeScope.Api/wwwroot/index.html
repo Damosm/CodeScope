@@ -80,7 +80,7 @@
       <div class="section-heading">
         <div><span class="eyebrow">Dépendances interactives</span><h2>Graphes</h2></div>
         <div class="graph-toolbar">
-          <select id="graphKind" disabled><option value="types">Types C#</option><option value="projects">Projets</option><option value="sql">SQL</option><option value="cobol">COBOL</option></select>
+          <select id="graphKind" disabled><option value="types">Types C#</option><option value="projects">Projets</option><option value="sql">SQL</option><option value="orm">EF Core / SQL</option><option value="cobol">COBOL</option></select>
           <select id="edgeFilter" disabled><option value="">Toutes relations</option></select>
           <button id="zoomOut" type="button" class="subtle" disabled aria-label="Dézoomer">−</button>
           <button id="zoomIn" type="button" class="subtle" disabled aria-label="Zoomer">+</button>
@@ -91,6 +91,16 @@
       <p class="muted graph-help">Molette : zoom · glisser le fond : déplacer · glisser un nœud : réorganiser.</p>
       <div id="graphStatus" class="empty">Sélectionnez une analyse terminée.</div>
       <svg id="dependencyGraph" viewBox="0 0 1000 620" role="img" aria-label="Graphe de dépendances" hidden></svg>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><span class="eyebrow">C# vers base de données</span><h2>Correspondances EF Core</h2></div></div>
+      <div class="row">
+        <input id="ormQuery" autocomplete="off" placeholder="Entité ou table" disabled>
+        <button id="searchOrm" type="button" disabled>Rechercher</button>
+      </div>
+      <div id="ormResults" class="empty">Sélectionnez une analyse terminée.</div>
+      <div id="ormProperties" hidden></div>
     </section>
 
     <section class="card">

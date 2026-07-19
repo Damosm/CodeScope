@@ -71,6 +71,37 @@ public sealed class AdvancedFeatureTests
         Assert.Contains(results.EnumerateArray(), result => result.GetProperty("ruleId").GetString() == "CSCOPE003");
     }
 
+    [Fact]
+    public async Task Orm_graph_and_impact_bridge_csharp_properties_to_sql_columns()
+    {
+        await using var db = CreateDatabase();
+        var repository = new AnalysisRepository(db);
+        var pending = new Analysis { RootPath = "C:\\sample", Status = AnalysisStatus.Pending };
+        await repository.AddAsync(pending, default);
+        var entity = new CodeSymbol { Kind = SymbolKind.Class, Name = "Customer", FilePath = "C:\\sample\\Customer.cs", Line = 1 };
+        var property = new CodeSymbol { Kind = SymbolKind.Property, Name = "Id", Container = "Customer", FilePath = entity.FilePath, Line = 2, ReturnType = "int" };
+        var table = new SqlObject { AnalysisId = pending.Id, Kind = SqlObjectKind.Table, Name = "dbo.Customers", FilePath = "C:\\sample\\database.sql", Line = 1 };
+        var column = new SqlColumn { AnalysisId = pending.Id, SqlObjectId = table.Id, Name = "customer_id", DataType = "int", Ordinal = 1, FilePath = table.FilePath, Line = 1 };
+        var entityMapping = new OrmEntityMapping { AnalysisId = pending.Id, CodeSymbolId = entity.Id, SqlObjectId = table.Id, EntityName = "Customer", TableName = table.Name, Source = OrmMappingSource.TableAttribute, Confidence = RelationConfidence.Certain, FilePath = entity.FilePath, Line = 1 };
+        var propertyMapping = new OrmPropertyMapping { AnalysisId = pending.Id, OrmEntityMappingId = entityMapping.Id, CodeSymbolId = property.Id, SqlColumnId = column.Id, PropertyName = "Id", ColumnName = column.Name, Source = OrmMappingSource.PropertyAttribute, Confidence = RelationConfidence.Certain, FilePath = property.FilePath, Line = 2 };
+        var completed = new Analysis
+        {
+            Id = pending.Id, RootPath = pending.RootPath, Status = AnalysisStatus.Completed,
+            Projects = { new ProjectInfo { AnalysisId = pending.Id, Name = "Sample", Path = "C:\\sample\\Sample.csproj", Symbols = { entity, property } } },
+            SqlObjects = { table }, SqlColumns = { column }, OrmEntityMappings = { entityMapping }, OrmPropertyMappings = { propertyMapping }
+        };
+        await repository.CompleteAsync(completed, default);
+
+        var graph = await new DependencyGraphService(repository).BuildAsync(pending.Id, "orm", 100, default);
+        var impact = await new ImpactAnalysisService(repository).AnalyzeAsync(pending.Id, ImpactElementKind.CodeSymbol, property.Id, 2, default);
+
+        Assert.NotNull(graph);
+        Assert.Equal(4, graph!.Nodes.Count);
+        Assert.Equal(2, graph.Edges.Count);
+        Assert.NotNull(impact);
+        Assert.Contains(impact!.Nodes, node => node.Kind == ImpactElementKind.SqlObject && node.Name == table.Name && node.Relationship.Contains(column.Name));
+    }
+
     private static CodeScopeDbContext CreateDatabase() => new(new DbContextOptionsBuilder<CodeScopeDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options);
 

@@ -234,6 +234,24 @@ public sealed class ImpactAnalysisService : IImpactAnalysisService
                 relation.Confidence);
         }
 
+        foreach (var mapping in analysis.OrmEntityMappings.Where(mapping => mapping.CodeSymbolId.HasValue && mapping.SqlObjectId.HasValue))
+        {
+            var sourceKey = Key(ImpactElementKind.CodeSymbol, mapping.CodeSymbolId!.Value);
+            var targetKey = Key(ImpactElementKind.SqlObject, mapping.SqlObjectId!.Value);
+            if (graph.Nodes.ContainsKey(sourceKey) && graph.Nodes.ContainsKey(targetKey))
+                AddBidirectional(graph, sourceKey, targetKey, "est mappé vers", "est mappée par", mapping.Confidence);
+        }
+
+        var entityMappings = analysis.OrmEntityMappings.ToDictionary(mapping => mapping.Id);
+        foreach (var mapping in analysis.OrmPropertyMappings.Where(mapping => mapping.CodeSymbolId.HasValue))
+        {
+            if (!entityMappings.TryGetValue(mapping.OrmEntityMappingId, out var entityMapping) || !entityMapping.SqlObjectId.HasValue) continue;
+            var sourceKey = Key(ImpactElementKind.CodeSymbol, mapping.CodeSymbolId!.Value);
+            var targetKey = Key(ImpactElementKind.SqlObject, entityMapping.SqlObjectId.Value);
+            if (graph.Nodes.ContainsKey(sourceKey) && graph.Nodes.ContainsKey(targetKey))
+                AddBidirectional(graph, sourceKey, targetKey, $"mappe la colonne {mapping.ColumnName}", $"alimente la propriété {mapping.PropertyName}", mapping.Confidence);
+        }
+
         return graph;
     }
 

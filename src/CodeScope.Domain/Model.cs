@@ -12,6 +12,7 @@ public enum SourceFileCategory { SourceCode, Configuration, Sql, Cobol, Project,
 public enum CobolSymbolKind { Program, Section, Paragraph, Copybook }
 public enum CobolRelationKind { Calls, Copies }
 public enum DiagnosticSeverity { Info, Warning, Error }
+public enum OrmMappingSource { TableAttribute, FluentApi, DbSetConvention, PropertyAttribute, PropertyConvention }
 
 public sealed class Analysis
 {
@@ -33,6 +34,8 @@ public sealed class Analysis
     public List<CobolSymbol> CobolSymbols { get; set; } = new();
     public List<CobolRelation> CobolRelations { get; set; } = new();
     public List<AnalysisDiagnostic> Diagnostics { get; set; } = new();
+    public List<OrmEntityMapping> OrmEntityMappings { get; set; } = new();
+    public List<OrmPropertyMapping> OrmPropertyMappings { get; set; } = new();
 }
 
 public sealed class ProjectInfo
@@ -218,4 +221,34 @@ public sealed class AnalysisDiagnostic
     public string Message { get; set; } = "";
     public string? FilePath { get; set; }
     public int? Line { get; set; }
+}
+
+public sealed class OrmEntityMapping
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid? ProjectInfoId { get; set; }
+    public Guid? CodeSymbolId { get; set; }
+    public Guid? SqlObjectId { get; set; }
+    public string EntityName { get; set; } = "";
+    public string TableName { get; set; } = "";
+    public OrmMappingSource Source { get; set; }
+    public RelationConfidence Confidence { get; set; }
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
+}
+
+public sealed class OrmPropertyMapping
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AnalysisId { get; set; }
+    public Guid OrmEntityMappingId { get; set; }
+    public Guid? CodeSymbolId { get; set; }
+    public Guid? SqlColumnId { get; set; }
+    public string PropertyName { get; set; } = "";
+    public string ColumnName { get; set; } = "";
+    public OrmMappingSource Source { get; set; }
+    public RelationConfidence Confidence { get; set; }
+    public string FilePath { get; set; } = "";
+    public int Line { get; set; }
 }

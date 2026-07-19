@@ -31,6 +31,8 @@ public interface IAnalysisRepository
     Task<IReadOnlyList<CobolSymbol>> SearchCobolAsync(Guid analysisId, string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<CobolRelation>> GetCobolRelationsAsync(Guid analysisId, Guid? symbolId, CancellationToken cancellationToken);
     Task<IReadOnlyList<AnalysisDiagnostic>> GetDiagnosticsAsync(Guid analysisId, DiagnosticSeverity? severity, CancellationToken cancellationToken);
+    Task<IReadOnlyList<OrmEntityMapping>> SearchOrmMappingsAsync(Guid analysisId, string query, CancellationToken cancellationToken);
+    Task<IReadOnlyList<OrmPropertyMapping>> GetOrmPropertyMappingsAsync(Guid analysisId, Guid? entityMappingId, CancellationToken cancellationToken);
 }
 
 public interface IAnalysisJobQueue
@@ -118,7 +120,8 @@ public sealed record Dashboard(
     int Properties = 0,
     int SqlColumns = 0,
     int CobolSymbols = 0,
-    int Diagnostics = 0);
+    int Diagnostics = 0,
+    int OrmMappings = 0);
 
 public sealed record ImpactNode(
     string Key,

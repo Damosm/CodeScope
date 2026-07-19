@@ -30,7 +30,9 @@ internal static class SqlScriptAnalyzer
     private static readonly Regex NameTokenRegex = new(QualifiedNamePattern, Options);
     private static readonly Regex InsertColumnsRegex = new(@"\bINSERT\s+(?:INTO\s+)?(?<name>" + QualifiedNamePattern + @")\s*\((?<columns>[^)]*)\)", Options);
     private static readonly Regex UpdateColumnsRegex = new(@"\bUPDATE\s+(?<name>" + QualifiedNamePattern + @")\s+SET\s+(?<columns>.*?)(?:\bWHERE\b|;|$)", Options | RegexOptions.Singleline);
-    private static readonly Regex SelectColumnsRegex = new(@"\bSELECT\s+(?<columns>.*?)\s+FROM\s+(?<name>" + QualifiedNamePattern + @")", Options | RegexOptions.Singleline);
+    private static readonly Regex SelectStatementRegex = new(@"\bSELECT\s+(?<columns>.*?)\s+FROM\s+(?<sources>.*?)(?=\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bHAVING\b|\bUNION\b|;|\bGO\b|$)", Options | RegexOptions.Singleline);
+    private static readonly Regex TableSourceRegex = new(@"(?:^|\b(?:(?:INNER|LEFT|RIGHT|FULL|CROSS)\s+)?JOIN\s+|,)\s*(?<name>" + QualifiedNamePattern + @")(?:\s+(?:AS\s+)?(?<alias>(?!(?:JOIN|ON|INNER|LEFT|RIGHT|FULL|CROSS)\b)" + IdentifierPattern + @"))?", Options);
+    private static readonly Regex QualifiedColumnRegex = new(@"(?<alias>" + IdentifierPattern + @")\s*\.\s*(?<column>" + IdentifierPattern + @")", Options);
     private static readonly HashSet<string> Excluded = new(StringComparer.OrdinalIgnoreCase)
         { ".git", ".vs", "bin", "obj", "node_modules", "packages" };
     private const RegexOptions Options = RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
@@ -301,7 +303,59 @@ internal static class SqlScriptAnalyzer
     {
         ExtractColumnPattern(analysis, parsed, InsertColumnsRegex, SqlOperationKind.Insert, objectLookup, shortNameLookup, false);
         ExtractColumnPattern(analysis, parsed, UpdateColumnsRegex, SqlOperationKind.Update, objectLookup, shortNameLookup, true);
-        ExtractColumnPattern(analysis, parsed, SelectColumnsRegex, SqlOperationKind.Select, objectLookup, shortNameLookup, false);
+        ExtractSelectColumnReferences(analysis, parsed, objectLookup, shortNameLookup);
+    }
+
+    private static void ExtractSelectColumnReferences(
+        Analysis analysis,
+        ParsedSqlFile parsed,
+        IReadOnlyDictionary<string, List<SqlObject>> objectLookup,
+        IReadOnlyDictionary<string, List<SqlObject>> shortNameLookup)
+    {
+        foreach (Match statement in SelectStatementRegex.Matches(parsed.SanitizedText))
+        {
+            var sources = new List<SelectSource>();
+            foreach (Match sourceMatch in TableSourceRegex.Matches(statement.Groups["sources"].Value))
+            {
+                var sourceName = NormalizeName(sourceMatch.Groups["name"].Value);
+                var sqlObject = ResolveObject(sourceName, objectLookup, shortNameLookup);
+                if (sqlObject is null) continue;
+                var alias = sourceMatch.Groups["alias"].Success
+                    ? NormalizeName(sourceMatch.Groups["alias"].Value)
+                    : ShortName(sourceName);
+                sources.Add(new SelectSource(alias, sourceName, sqlObject));
+            }
+            if (sources.Count == 0) continue;
+
+            var columnsText = statement.Groups["columns"].Value;
+            var qualifiedSpans = new List<(int Start, int End)>();
+            foreach (Match columnMatch in QualifiedColumnRegex.Matches(columnsText))
+            {
+                qualifiedSpans.Add((columnMatch.Index, columnMatch.Index + columnMatch.Length));
+                var alias = NormalizeName(columnMatch.Groups["alias"].Value);
+                var columnName = NormalizeName(columnMatch.Groups["column"].Value);
+                var source = sources.FirstOrDefault(item => item.Alias.Equals(alias, StringComparison.OrdinalIgnoreCase) ||
+                    ShortName(item.ObjectName).Equals(alias, StringComparison.OrdinalIgnoreCase));
+                if (source is null) continue;
+                var column = ResolveColumn(analysis.SqlColumns.Where(item => item.SqlObjectId == source.SqlObject.Id), columnName);
+                if (column is not null)
+                    AddColumnReference(analysis, source.SqlObject, column, SqlOperationKind.Select, RelationConfidence.Certain,
+                        parsed.Path, GetLine(parsed.SanitizedText, statement.Index));
+            }
+
+            foreach (Match token in Regex.Matches(columnsText, IdentifierPattern, Options))
+            {
+                if (qualifiedSpans.Any(span => span.Start <= token.Index && token.Index < span.End)) continue;
+                var columnName = NormalizeName(token.Value);
+                if (IsSqlKeyword(columnName) || sources.Any(source => source.Alias.Equals(columnName, StringComparison.OrdinalIgnoreCase))) continue;
+                var matches = sources.Select(source => (Source: source, Column: ResolveColumn(
+                        analysis.SqlColumns.Where(item => item.SqlObjectId == source.SqlObject.Id), columnName)))
+                    .Where(item => item.Column is not null).ToList();
+                if (matches.Count != 1) continue;
+                AddColumnReference(analysis, matches[0].Source.SqlObject, matches[0].Column!, SqlOperationKind.Select,
+                    RelationConfidence.Certain, parsed.Path, GetLine(parsed.SanitizedText, statement.Index));
+            }
+        }
     }
 
     private static void ExtractColumnPattern(
@@ -331,22 +385,35 @@ internal static class SqlScriptAnalyzer
                 if (candidate == "*" || IsSqlKeyword(candidate)) continue;
                 known.TryGetValue(ShortName(candidate), out var column);
                 if (column is null) continue;
-                var key = $"{parsed.Path}|{match.Index}|{operation}|{sqlObject.Id}|{column.Id}";
-                if (analysis.SqlColumnReferences.Any(reference => $"{reference.FilePath}|{reference.Line}|{reference.Operation}|{reference.SqlObjectId}|{reference.SqlColumnId}" == key)) continue;
-                analysis.SqlColumnReferences.Add(new SqlColumnReference
-                {
-                    AnalysisId = analysis.Id,
-                    SqlObjectId = sqlObject.Id,
-                    SqlColumnId = column.Id,
-                    ObjectName = sqlObject.Name,
-                    ColumnName = column.Name,
-                    Operation = operation,
-                    Confidence = RelationConfidence.Certain,
-                    FilePath = parsed.Path,
-                    Line = GetLine(parsed.SanitizedText, match.Index)
-                });
+                AddColumnReference(analysis, sqlObject, column, operation, RelationConfidence.Certain,
+                    parsed.Path, GetLine(parsed.SanitizedText, match.Index));
             }
         }
+    }
+
+    private static void AddColumnReference(
+        Analysis analysis,
+        SqlObject sqlObject,
+        SqlColumn column,
+        SqlOperationKind operation,
+        RelationConfidence confidence,
+        string filePath,
+        int line)
+    {
+        if (analysis.SqlColumnReferences.Any(reference => reference.FilePath == filePath && reference.Line == line &&
+            reference.Operation == operation && reference.SqlObjectId == sqlObject.Id && reference.SqlColumnId == column.Id)) return;
+        analysis.SqlColumnReferences.Add(new SqlColumnReference
+        {
+            AnalysisId = analysis.Id,
+            SqlObjectId = sqlObject.Id,
+            SqlColumnId = column.Id,
+            ObjectName = sqlObject.Name,
+            ColumnName = column.Name,
+            Operation = operation,
+            Confidence = confidence,
+            FilePath = filePath,
+            Line = line
+        });
     }
 
     private static bool IsSqlKeyword(string value) => value.ToUpperInvariant() is
@@ -427,6 +494,13 @@ internal static class SqlScriptAnalyzer
         return shortNameLookup.TryGetValue(shortName, out var candidates) && candidates.Count == 1
             ? candidates[0]
             : null;
+    }
+
+    private static SqlColumn? ResolveColumn(IEnumerable<SqlColumn> columns, string name)
+    {
+        var shortName = ShortName(name);
+        var candidates = columns.Where(column => column.Name.Equals(shortName, StringComparison.OrdinalIgnoreCase)).ToList();
+        return candidates.Count == 1 ? candidates[0] : null;
     }
 
     private static SqlOperationKind InferOperation(string value, int nameIndex)
@@ -581,5 +655,6 @@ internal static class SqlScriptAnalyzer
     {
         public List<DefinitionContext> Definitions { get; } = new();
     }
+    private sealed record SelectSource(string Alias, string ObjectName, SqlObject SqlObject);
     private enum SanitizerState { Normal, LineComment, BlockComment, String }
 }

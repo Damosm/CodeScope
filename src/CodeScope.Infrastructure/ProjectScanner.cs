@@ -53,6 +53,7 @@ public sealed class ProjectScanner : IProjectScanner
         {
             await ApiEndpointAnalyzer.AnalyzeAsync(semanticResult, progress, ct);
             await SqlScriptAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
+            await EfCoreMappingAnalyzer.AnalyzeAsync(semanticResult, progress, ct);
             await CobolSourceAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
             await FileInventoryAnalyzer.AnalyzeAsync(semanticResult, fullRoot, progress, ct);
             return semanticResult;
@@ -133,6 +134,7 @@ public sealed class ProjectScanner : IProjectScanner
 
         await ApiEndpointAnalyzer.AnalyzeAsync(analysis, progress, ct);
         await SqlScriptAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
+        await EfCoreMappingAnalyzer.AnalyzeAsync(analysis, progress, ct);
         await CobolSourceAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
         await FileInventoryAnalyzer.AnalyzeAsync(analysis, fullRoot, progress, ct);
         analysis.Status = AnalysisStatus.Completed;

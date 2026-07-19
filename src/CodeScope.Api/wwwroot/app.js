@@ -26,6 +26,10 @@ const elements = {
   searchSql: document.querySelector('#searchSql'),
   sqlResults: document.querySelector('#sqlResults'),
   sqlReferences: document.querySelector('#sqlReferences'),
+  ormQuery: document.querySelector('#ormQuery'),
+  searchOrm: document.querySelector('#searchOrm'),
+  ormResults: document.querySelector('#ormResults'),
+  ormProperties: document.querySelector('#ormProperties'),
   fileQuery: document.querySelector('#fileQuery'),
   fileCategory: document.querySelector('#fileCategory'),
   searchFiles: document.querySelector('#searchFiles'),
@@ -87,7 +91,8 @@ const metricLabels = {
   properties: 'Propriétés C#',
   sqlColumns: 'Colonnes SQL',
   cobolSymbols: 'Symboles COBOL',
-  diagnostics: 'Diagnostics'
+  diagnostics: 'Diagnostics',
+  ormMappings: 'Entités ORM'
 };
 const riskLabels = {
   low: 'Faible',
@@ -153,6 +158,15 @@ elements.sqlResults.addEventListener('click', event => {
     showImpact('SqlObject', button.dataset.sqlObjectId, button.dataset.sqlObjectName);
   else
     showSqlReferences(button.dataset.sqlObjectId, button.dataset.sqlObjectName);
+});
+elements.searchOrm.addEventListener('click', loadOrmMappings);
+elements.ormQuery.addEventListener('keydown', event => { if (event.key === 'Enter') loadOrmMappings(); });
+elements.ormResults.addEventListener('click', event => {
+  const button = event.target.closest('button[data-orm-action]');
+  if (!button) return;
+  if (button.dataset.ormAction === 'properties') showOrmProperties(button.dataset.mappingId, button.dataset.entityName);
+  if (button.dataset.ormAction === 'entity-impact') showImpact('CodeSymbol', button.dataset.elementId, button.dataset.entityName);
+  if (button.dataset.ormAction === 'table-impact') showImpact('SqlObject', button.dataset.elementId, button.dataset.tableName);
 });
 elements.searchFiles.addEventListener('click', loadFiles);
 elements.fileQuery.addEventListener('keydown', event => { if (event.key === 'Enter') loadFiles(); });
@@ -246,6 +260,8 @@ async function loadAnalysis(id) {
   elements.search.disabled = false;
   elements.sqlQuery.disabled = false;
   elements.searchSql.disabled = false;
+  elements.ormQuery.disabled = false;
+  elements.searchOrm.disabled = false;
   elements.viewDocumentation.disabled = false;
   elements.downloadDocumentation.disabled = false;
   elements.downloadPdf.disabled = false;
@@ -256,7 +272,7 @@ async function loadAnalysis(id) {
   elements.diagnosticSeverity.disabled = false;
   [elements.graphKind, elements.edgeFilter, elements.zoomOut, elements.zoomIn, elements.resetGraph, elements.exportGraph]
     .forEach(element => { element.disabled = false; });
-  await Promise.all([loadSqlObjects(), loadFiles(), loadGraph(), loadCobol(), loadDiagnostics()]);
+  await Promise.all([loadSqlObjects(), loadOrmMappings(), loadFiles(), loadGraph(), loadCobol(), loadDiagnostics()]);
 }
 
 async function renderDashboard(id) {
@@ -491,6 +507,27 @@ async function showSqlReferences(objectId, objectName) {
   }
 }
 
+async function loadOrmMappings() {
+  if (!currentId) return;
+  elements.ormResults.className = '';
+  elements.ormResults.innerHTML = '<p class="empty">Chargement…</p>';
+  elements.ormProperties.hidden = true;
+  try {
+    const query = encodeURIComponent(elements.ormQuery.value.trim());
+    const mappings = await api(`/api/analyses/${currentId}/orm?q=${query}`);
+    elements.ormResults.innerHTML = mappings.length ? mappings.map(mapping => `<article class="orm-mapping symbol-row"><div><strong>${escapeHtml(mapping.entityName)}</strong><span class="mapping-arrow">→</span><strong>${escapeHtml(mapping.tableName)}</strong><br><small>${escapeHtml(mapping.source)} · confiance ${escapeHtml(normalizeStatus(mapping.confidence))} · ${escapeHtml(mapping.filePath)}:${mapping.line}</small></div><div class="result-actions"><button type="button" class="subtle" data-orm-action="properties" data-mapping-id="${mapping.id}" data-entity-name="${escapeHtml(mapping.entityName)}">Propriétés</button>${mapping.codeSymbolId ? `<button type="button" class="subtle" data-orm-action="entity-impact" data-element-id="${mapping.codeSymbolId}" data-entity-name="${escapeHtml(mapping.entityName)}">Impact C#</button>` : ''}${mapping.sqlObjectId ? `<button type="button" class="subtle" data-orm-action="table-impact" data-element-id="${mapping.sqlObjectId}" data-table-name="${escapeHtml(mapping.tableName)}">Impact SQL</button>` : ''}</div></article>`).join('') : '<p class="empty">Aucune correspondance EF Core détectée.</p>';
+  } catch (error) { elements.ormResults.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
+}
+
+async function showOrmProperties(mappingId, entityName) {
+  elements.ormProperties.hidden = false;
+  elements.ormProperties.innerHTML = '<p class="empty">Chargement…</p>';
+  try {
+    const properties = await api(`/api/analyses/${currentId}/orm-properties?entityMappingId=${encodeURIComponent(mappingId)}`);
+    elements.ormProperties.innerHTML = `<h3>Propriétés de ${escapeHtml(entityName)}</h3>` + (properties.length ? `<div class="table-scroll"><table><thead><tr><th>Propriété C#</th><th>Colonne SQL</th><th>Source</th><th>Confiance</th></tr></thead><tbody>${properties.map(property => `<tr><td>${escapeHtml(property.propertyName)}</td><td>${escapeHtml(property.columnName)}</td><td>${escapeHtml(property.source)}</td><td>${escapeHtml(normalizeStatus(property.confidence))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Aucune propriété mappée.</p>');
+  } catch (error) { elements.ormProperties.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
+}
+
 async function loadFiles() {
   if (!currentId) return;
   elements.fileTree.className = 'file-tree';
@@ -689,6 +726,10 @@ function resetResults() {
   elements.sqlResults.textContent = 'Sélectionnez une analyse terminée.';
   elements.sqlReferences.hidden = true;
   elements.sqlReferences.innerHTML = '';
+  elements.ormResults.className = 'empty';
+  elements.ormResults.textContent = 'Sélectionnez une analyse terminée.';
+  elements.ormProperties.hidden = true;
+  elements.ormProperties.innerHTML = '';
   elements.fileTree.className = 'file-tree empty';
   elements.fileTree.textContent = 'Sélectionnez une analyse terminée.';
   elements.fileProperties.className = 'file-properties empty';
@@ -705,6 +746,8 @@ function resetResults() {
   elements.search.disabled = true;
   elements.sqlQuery.disabled = true;
   elements.searchSql.disabled = true;
+  elements.ormQuery.disabled = true;
+  elements.searchOrm.disabled = true;
   elements.fileQuery.disabled = true;
   elements.fileCategory.disabled = true;
   elements.searchFiles.disabled = true;

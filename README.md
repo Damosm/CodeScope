@@ -1,6 +1,6 @@
 # CodeScope
 
-CodeScope analyse localement une base .NET/SQL/COBOL en lecture seule. Il inventorie les fichiers et leurs empreintes SHA-256, les projets, packages, symboles (dont propriétés et champs), endpoints, objets et colonnes SQL, programmes COBOL et dépendances. Pour une solution `.sln`, il résout aussi les appels, héritages, implémentations et instanciations avec Roslyn/MSBuild. Les analyses s'exécutent dans une file d'arrière-plan avec progression et annulation.
+CodeScope analyse localement une base .NET/SQL/COBOL en lecture seule. Il inventorie les fichiers et leurs empreintes SHA-256, les projets, packages, symboles (dont propriétés et champs), endpoints, objets et colonnes SQL, programmes COBOL et dépendances. Il relie également les entités/propriétés EF Core aux tables/colonnes détectées. Pour une solution `.sln`, il résout les appels, héritages, implémentations et instanciations avec Roslyn/MSBuild. Les analyses s'exécutent dans une file d'arrière-plan avec progression et annulation.
 
 ## Prérequis et démarrage
 
@@ -13,7 +13,7 @@ dotnet run --project src/CodeScope.Api
 
 Ouvrir l'adresse indiquée, saisir un dossier local contenant des `.csproj`, puis lancer l'analyse. Les résultats sont conservés dans SQLite sous `src/CodeScope.Api/data/`.
 
-L'interface permet de suivre les projets et fichiers traités, d'annuler une analyse, de consulter les analyses précédentes, de rechercher symboles et endpoints, de parcourir une arborescence de fichiers/propriétés, d'explorer objets et colonnes SQL, d'afficher les éléments COBOL et de manipuler des graphes SVG (zoom, déplacement, filtre et export PNG). Elle compare deux analyses à partir des empreintes de fichiers et des instantanés Git, y compris les renommages. L'impact est réglable de 1 à 4 niveaux et présente les chemins critiques. Les diagnostics sont filtrables et intégrés aux exports HTML/SARIF ; la documentation est aussi exportable en PDF. En l'absence de solution chargeable, une analyse syntaxique de secours reste disponible.
+L'interface permet de suivre les projets et fichiers traités, d'annuler une analyse, de consulter les analyses précédentes, de rechercher symboles et endpoints, de parcourir une arborescence de fichiers/propriétés, d'explorer objets et colonnes SQL, les correspondances EF Core et les éléments COBOL, puis de manipuler des graphes SVG (zoom, déplacement, filtre et export PNG). Elle compare deux analyses à partir des empreintes de fichiers et des instantanés Git, y compris les renommages. L'impact unifié C#/ORM/SQL est réglable de 1 à 4 niveaux et présente les chemins critiques. Les diagnostics sont filtrables et intégrés aux exports HTML/SARIF ; la documentation est aussi exportable en PDF. En l'absence de solution chargeable, une analyse syntaxique de secours reste disponible.
 
 ## Tests
 

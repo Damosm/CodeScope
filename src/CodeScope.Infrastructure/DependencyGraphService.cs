@@ -17,6 +17,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
         {
             "projects" => Projects(analysis, limit),
             "sql" => Sql(analysis, limit),
+            "orm" => Orm(analysis, limit),
             "cobol" => Cobol(analysis, limit),
             _ => Types(analysis, limit)
         };
@@ -71,6 +72,45 @@ public sealed class DependencyGraphService : IDependencyGraphService
                 ids.Contains(relation.SourceSymbolId.Value) && ids.Contains(relation.TargetSymbolId.Value))
             .Select(relation => new GraphEdge(relation.SourceSymbolId!.Value.ToString("N"), relation.TargetSymbolId!.Value.ToString("N"), relation.Kind.ToString(), relation.Confidence)).ToList();
         return new GraphData("cobol", nodes, edges, analysis.CobolSymbols.Count > limit);
+    }
+
+    private static GraphData Orm(Analysis analysis, int limit)
+    {
+        var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
+        var edges = new List<GraphEdge>();
+        var codeSymbols = analysis.Projects.SelectMany(project => project.Symbols).ToDictionary(symbol => symbol.Id);
+        var sqlObjects = analysis.SqlObjects.ToDictionary(item => item.Id);
+        var sqlColumns = analysis.SqlColumns.ToDictionary(item => item.Id);
+        var mappings = analysis.OrmEntityMappings.Take(limit).ToList();
+        foreach (var mapping in mappings)
+        {
+            if (!mapping.CodeSymbolId.HasValue || !mapping.SqlObjectId.HasValue ||
+                !codeSymbols.TryGetValue(mapping.CodeSymbolId.Value, out var entity) ||
+                !sqlObjects.TryGetValue(mapping.SqlObjectId.Value, out var table)) continue;
+            var entityKey = $"code:{entity.Id:N}";
+            var tableKey = $"sql:{table.Id:N}";
+            nodes.TryAdd(entityKey, new GraphNode(entityKey, Display(entity), "Entity", mapping.Source.ToString(), entity.FilePath,
+                Math.Max(1, analysis.OrmPropertyMappings.Count(item => item.OrmEntityMappingId == mapping.Id))));
+            nodes.TryAdd(tableKey, new GraphNode(tableKey, table.Name, "Table", "SQL", table.FilePath,
+                Math.Max(1, analysis.SqlColumns.Count(column => column.SqlObjectId == table.Id))));
+            edges.Add(new GraphEdge(entityKey, tableKey, "MapsTo", mapping.Confidence));
+
+            foreach (var propertyMapping in analysis.OrmPropertyMappings.Where(item => item.OrmEntityMappingId == mapping.Id))
+            {
+                if (!propertyMapping.CodeSymbolId.HasValue || !propertyMapping.SqlColumnId.HasValue ||
+                    !codeSymbols.TryGetValue(propertyMapping.CodeSymbolId.Value, out var property) ||
+                    !sqlColumns.TryGetValue(propertyMapping.SqlColumnId.Value, out var column)) continue;
+                var propertyKey = $"code:{property.Id:N}";
+                var columnKey = $"column:{column.Id:N}";
+                nodes.TryAdd(propertyKey, new GraphNode(propertyKey, Display(property), "Property", mapping.EntityName, property.FilePath, 1));
+                nodes.TryAdd(columnKey, new GraphNode(columnKey, $"{table.Name}.{column.Name}", "Column", table.Name, column.FilePath, 1));
+                edges.Add(new GraphEdge(propertyKey, columnKey, "MapsToColumn", propertyMapping.Confidence));
+            }
+        }
+        var selectedNodes = nodes.Values.Take(limit).ToList();
+        var selectedIds = selectedNodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
+        return new GraphData("orm", selectedNodes, edges.Where(edge => selectedIds.Contains(edge.Source) && selectedIds.Contains(edge.Target)).ToList(),
+            analysis.OrmEntityMappings.Count > mappings.Count || nodes.Count > limit);
     }
 
     private static string Display(CodeSymbol symbol) => string.IsNullOrWhiteSpace(symbol.Container) ? symbol.Name : $"{symbol.Container}.{symbol.Name}";

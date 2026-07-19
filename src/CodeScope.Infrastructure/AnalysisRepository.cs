@@ -31,6 +31,8 @@ public sealed class AnalysisRepository : IAnalysisRepository
             .Include(x => x.CobolSymbols)
             .Include(x => x.CobolRelations)
             .Include(x => x.Diagnostics)
+            .Include(x => x.OrmEntityMappings)
+            .Include(x => x.OrmPropertyMappings)
             .SingleAsync(x => x.Id == result.Id, ct);
 
         if (analysis.Projects.Count > 0)
@@ -50,6 +52,8 @@ public sealed class AnalysisRepository : IAnalysisRepository
         if (analysis.CobolSymbols.Count > 0) _db.CobolSymbols.RemoveRange(analysis.CobolSymbols);
         if (analysis.CobolRelations.Count > 0) _db.CobolRelations.RemoveRange(analysis.CobolRelations);
         if (analysis.Diagnostics.Count > 0) _db.AnalysisDiagnostics.RemoveRange(analysis.Diagnostics);
+        if (analysis.OrmEntityMappings.Count > 0) _db.OrmEntityMappings.RemoveRange(analysis.OrmEntityMappings);
+        if (analysis.OrmPropertyMappings.Count > 0) _db.OrmPropertyMappings.RemoveRange(analysis.OrmPropertyMappings);
 
         analysis.Status = AnalysisStatus.Completed;
         analysis.CompletedAt = result.CompletedAt ?? DateTimeOffset.UtcNow;
@@ -92,6 +96,8 @@ public sealed class AnalysisRepository : IAnalysisRepository
         foreach (var symbol in result.CobolSymbols) { symbol.AnalysisId = analysis.Id; _db.CobolSymbols.Add(symbol); }
         foreach (var relation in result.CobolRelations) { relation.AnalysisId = analysis.Id; _db.CobolRelations.Add(relation); }
         foreach (var diagnostic in result.Diagnostics) { diagnostic.AnalysisId = analysis.Id; _db.AnalysisDiagnostics.Add(diagnostic); }
+        foreach (var mapping in result.OrmEntityMappings) { mapping.AnalysisId = analysis.Id; _db.OrmEntityMappings.Add(mapping); }
+        foreach (var mapping in result.OrmPropertyMappings) { mapping.AnalysisId = analysis.Id; _db.OrmPropertyMappings.Add(mapping); }
 
         await _db.SaveChangesAsync(ct);
     }
@@ -134,6 +140,8 @@ public sealed class AnalysisRepository : IAnalysisRepository
         .Include(x => x.CobolSymbols)
         .Include(x => x.CobolRelations)
         .Include(x => x.Diagnostics)
+        .Include(x => x.OrmEntityMappings)
+        .Include(x => x.OrmPropertyMappings)
         .SingleOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<AnalysisStatus?> GetStatusAsync(Guid id, CancellationToken ct) =>
@@ -220,4 +228,14 @@ public sealed class AnalysisRepository : IAnalysisRepository
             .Where(x => x.AnalysisId == id && (!severity.HasValue || x.Severity == severity))
             .OrderByDescending(x => x.Severity).ThenBy(x => x.Stage).ThenBy(x => x.FilePath).ThenBy(x => x.Line)
             .Take(2000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<OrmEntityMapping>> SearchOrmMappingsAsync(Guid id, string query, CancellationToken ct) =>
+        await _db.OrmEntityMappings.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (query == "" || x.EntityName.Contains(query) || x.TableName.Contains(query)))
+            .OrderBy(x => x.EntityName).ThenBy(x => x.TableName).Take(1000).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<OrmPropertyMapping>> GetOrmPropertyMappingsAsync(Guid id, Guid? entityMappingId, CancellationToken ct) =>
+        await _db.OrmPropertyMappings.AsNoTracking()
+            .Where(x => x.AnalysisId == id && (!entityMappingId.HasValue || x.OrmEntityMappingId == entityMappingId))
+            .OrderBy(x => x.PropertyName).Take(5000).ToListAsync(ct);
 }

@@ -188,5 +188,30 @@ public static class DatabaseSchemaInitializer
             );", cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS \"IX_AnalysisDiagnostics_AnalysisId_Severity\" ON \"AnalysisDiagnostics\" (\"AnalysisId\", \"Severity\");", cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            @"CREATE TABLE IF NOT EXISTS ""OrmEntityMappings"" (
+                ""Id"" TEXT NOT NULL CONSTRAINT ""PK_OrmEntityMappings"" PRIMARY KEY,
+                ""AnalysisId"" TEXT NOT NULL, ""ProjectInfoId"" TEXT NULL, ""CodeSymbolId"" TEXT NULL, ""SqlObjectId"" TEXT NULL,
+                ""EntityName"" TEXT NOT NULL, ""TableName"" TEXT NOT NULL,
+                ""Source"" INTEGER NOT NULL, ""Confidence"" INTEGER NOT NULL,
+                ""FilePath"" TEXT NOT NULL, ""Line"" INTEGER NOT NULL,
+                CONSTRAINT ""FK_OrmEntityMappings_Analyses_AnalysisId"" FOREIGN KEY (""AnalysisId"") REFERENCES ""Analyses"" (""Id"") ON DELETE CASCADE
+            );", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_OrmEntityMappings_AnalysisId_EntityName\" ON \"OrmEntityMappings\" (\"AnalysisId\", \"EntityName\");", cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            @"CREATE TABLE IF NOT EXISTS ""OrmPropertyMappings"" (
+                ""Id"" TEXT NOT NULL CONSTRAINT ""PK_OrmPropertyMappings"" PRIMARY KEY,
+                ""AnalysisId"" TEXT NOT NULL, ""OrmEntityMappingId"" TEXT NOT NULL,
+                ""CodeSymbolId"" TEXT NULL, ""SqlColumnId"" TEXT NULL,
+                ""PropertyName"" TEXT NOT NULL, ""ColumnName"" TEXT NOT NULL,
+                ""Source"" INTEGER NOT NULL, ""Confidence"" INTEGER NOT NULL,
+                ""FilePath"" TEXT NOT NULL, ""Line"" INTEGER NOT NULL,
+                CONSTRAINT ""FK_OrmPropertyMappings_Analyses_AnalysisId"" FOREIGN KEY (""AnalysisId"") REFERENCES ""Analyses"" (""Id"") ON DELETE CASCADE
+            );", cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_OrmPropertyMappings_OrmEntityMappingId_PropertyName\" ON \"OrmPropertyMappings\" (\"OrmEntityMappingId\", \"PropertyName\");", cancellationToken);
     }
 }

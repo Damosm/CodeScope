@@ -53,6 +53,8 @@ public sealed class AnalysisComparisonService : IAnalysisComparisonService
             to.SqlObjects.ToDictionary(item => $"{item.Kind}:{item.Name}", item => item.FilePath, StringComparer.OrdinalIgnoreCase), "SqlObject", added, removed);
         CompareSet(from.CobolSymbols.GroupBy(item => $"{item.Kind}:{item.Name}", StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase),
             to.CobolSymbols.GroupBy(item => $"{item.Kind}:{item.Name}", StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase), "CobolSymbol", added, removed);
+        CompareSet(from.OrmEntityMappings.GroupBy(item => $"{item.EntityName}:{item.TableName}", StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase),
+            to.OrmEntityMappings.GroupBy(item => $"{item.EntityName}:{item.TableName}", StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase), "OrmMapping", added, removed);
 
         return new AnalysisComparison(fromAnalysisId, toAnalysisId,
             from.RepositorySnapshots.FirstOrDefault()?.CommitHash,

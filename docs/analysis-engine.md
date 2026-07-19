@@ -18,7 +18,15 @@ Le scanner SQL masque les commentaires et chaînes tout en conservant les numér
 
 Une cible reliée à une définition unique est certaine ; une cible non résolue est probable. Les chaînes C# littérales, interpolées et assemblées par concaténation sont inspectées. Une occurrence de code reste toujours textuelle, même si le nom correspond à un objet ou une colonne connus, car sa valeur finale peut dépendre de l'exécution.
 
+Dans les `SELECT` multi-tables, les sources `FROM`/`JOIN` et leurs alias sont associées aux objets SQL. Une colonne qualifiée (`o.Id`) est attribuée à la source de l'alias ; une colonne non qualifiée n'est retenue que si elle existe dans une seule source du `SELECT`. Cela évite d'attribuer arbitrairement une colonne ambiguë à la première table.
+
 Cette approche accepte les scripts incomplets et les variables de déploiement sans exiger une grammaire SQL Server complète. Elle ne prétend pas résoudre les procédures stockées générées à l'exécution, les alias ambigus ni toutes les variantes dialectales.
+
+## Correspondances EF Core
+
+Le scanner reconnaît les attributs `[Table]` et `[Column]`, les appels Fluent API `ToTable` et `HasColumnName`, les classes `IEntityTypeConfiguration<TEntity>` et les propriétés `DbSet<TEntity>`. Fluent API prend la priorité sur les annotations, conformément au comportement d'EF Core ; les conventions `DbSet`/nom de propriété servent de repli.
+
+Une correspondance explicite dont les deux extrémités sont résolues est `Certain`. Une convention résolue est `Probable`. Une entité, table, propriété ou colonne absente du périmètre reste `Textual`. Les métriques « Entités ORM » et le graphe `orm` utilisent ces correspondances ; l'analyse d'impact relie directement classes/propriétés C# et objets SQL.
 
 ## Analyse COBOL tolérante
 

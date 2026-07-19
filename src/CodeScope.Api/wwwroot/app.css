@@ -40,8 +40,8 @@ button.subtle:hover { background: #edf8f7; }
 #progressBar.indeterminate { width: 35%; animation: progress 1.3s ease-in-out infinite alternate; }
 @keyframes progress { from { transform: translateX(-90%); } to { transform: translateX(280%); } }
 .progress-metrics { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #536273; font-size: 14px; }
-.history-item, .project, .symbol, .sql-object, .endpoint { border-bottom: 1px solid #edf0f3; padding: 12px 0; }
-.history-item:last-child, .project:last-child, .symbol:last-child, .sql-object:last-child, .endpoint:last-child { border-bottom: 0; }
+.history-item, .project, .symbol, .sql-object, .endpoint, .orm-mapping { border-bottom: 1px solid #edf0f3; padding: 12px 0; }
+.history-item:last-child, .project:last-child, .symbol:last-child, .sql-object:last-child, .endpoint:last-child, .orm-mapping:last-child { border-bottom: 0; }
 .history-item button { padding: 7px 10px; font-size: 13px; }
 .history-main { min-width: 0; }
 .history-main strong, .history-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -77,6 +77,8 @@ button.subtle:hover { background: #edf8f7; }
 #results h3 { margin: 18px 0 4px; color: #405268; }
 #sqlReferences { border-top: 1px solid #dce4ec; margin-top: 18px; padding-top: 16px; }
 #sqlReferences h3 { margin: 0 0 10px; }
+#ormProperties { border-top: 1px solid #dce4ec; margin-top: 18px; padding-top: 16px; }
+.mapping-arrow { color: #6750a4; margin: 0 10px; font-weight: 800; }
 .documentation-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .documentation-card h2 { margin: 3px 0 5px; }
 .documentation-card p { color: #64748b; margin: 0; max-width: 720px; }

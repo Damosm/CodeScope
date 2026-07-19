@@ -186,7 +186,8 @@ app.MapGet("/api/analyses/{id:guid}/dashboard", async (
         symbols.Count(symbol => symbol.Kind == SymbolKind.Property),
         analysis.SqlColumns.Count,
         analysis.CobolSymbols.Count,
-        analysis.Diagnostics.Count));
+        analysis.Diagnostics.Count,
+        analysis.OrmEntityMappings.Count));
 });
 
 app.MapGet("/api/analyses/{id:guid}/search", (
@@ -316,6 +317,22 @@ app.MapGet("/api/analyses/{id:guid}/diagnostics", async (Guid id, string? severi
     var status = await repository.GetStatusAsync(id, ct);
     if (!status.HasValue) return Results.NotFound();
     return Results.Ok(await repository.GetDiagnosticsAsync(id, parsedSeverity, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/orm", async (Guid id, string? q, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.SearchOrmMappingsAsync(id, q?.Trim() ?? string.Empty, ct));
+});
+
+app.MapGet("/api/analyses/{id:guid}/orm-properties", async (Guid id, Guid? entityMappingId, IAnalysisRepository repository, CancellationToken ct) =>
+{
+    var status = await repository.GetStatusAsync(id, ct);
+    if (!status.HasValue) return Results.NotFound();
+    if (status != AnalysisStatus.Completed) return Results.Conflict(new { error = "L'analyse n'est pas terminée." });
+    return Results.Ok(await repository.GetOrmPropertyMappingsAsync(id, entityMappingId, ct));
 });
 
 app.MapGet("/api/analyses/{id:guid}/graph", async (Guid id, string? kind, int? limit, IDependencyGraphService graphs, CancellationToken ct) =>

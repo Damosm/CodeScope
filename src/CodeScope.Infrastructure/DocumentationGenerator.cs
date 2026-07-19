@@ -54,6 +54,7 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
         Metric(html, "Colonnes SQL", analysis.SqlColumns.Count);
         Metric(html, "Symboles COBOL", analysis.CobolSymbols.Count);
         Metric(html, "Diagnostics", analysis.Diagnostics.Count);
+        Metric(html, "Entités ORM", analysis.OrmEntityMappings.Count);
         Metric(html, "Relations", analysis.Relations.Count + analysis.SqlReferences.Count);
         html.Append("</div>");
 
@@ -107,6 +108,18 @@ public sealed class DocumentationGenerator : IDocumentationGenerator
                 html.Append("<tr><td>").Append(E(symbol.Kind.ToString())).Append("</td><td><strong>").Append(E(symbol.Name))
                     .Append("</strong></td><td><code>").Append(E(symbol.FilePath)).Append(":").Append(symbol.Line).Append("</code></td></tr>");
             html.Append("</tbody></table><p>").Append(analysis.CobolRelations.Count).Append(" relation(s) CALL/COPY détectée(s).</p>");
+        }
+
+        html.Append("<h2>Correspondances EF Core</h2>");
+        if (analysis.OrmEntityMappings.Count == 0) html.Append("<p class=\"muted\">Aucune correspondance ORM détectée.</p>");
+        else
+        {
+            html.Append("<table><thead><tr><th>Entité</th><th>Table</th><th>Source</th><th>Confiance</th><th>Propriétés</th></tr></thead><tbody>");
+            foreach (var mapping in analysis.OrmEntityMappings.OrderBy(mapping => mapping.EntityName))
+                html.Append("<tr><td>").Append(E(mapping.EntityName)).Append("</td><td>").Append(E(mapping.TableName))
+                    .Append("</td><td>").Append(E(mapping.Source.ToString())).Append("</td><td>").Append(E(mapping.Confidence.ToString()))
+                    .Append("</td><td>").Append(analysis.OrmPropertyMappings.Count(property => property.OrmEntityMappingId == mapping.Id)).Append("</td></tr>");
+            html.Append("</tbody></table>");
         }
 
         html.Append("<h2>Packages NuGet</h2>");
